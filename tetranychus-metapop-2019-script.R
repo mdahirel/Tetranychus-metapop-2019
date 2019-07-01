@@ -62,7 +62,10 @@ data$PATCH2 <- str_remove(data$PATCH2, "[.]")
 
 Npatches <- length(unique(data$PATCH2)) ### counting how many patches there are
 
-tab <- spread(data = data, key = PATCH2, value = AFEMA)
+
+tab <- data %>% 
+  select(-c(PATCH)) %>% 
+  spread(key = PATCH2, value = AFEMA)
 ## reshape the dataset so that each of the 9 patch of the metapopulation has its own column
 ## this allows us to estimate the patch by patch variance covariance matrix, which is the basis of Wang and Loreau's method
 
