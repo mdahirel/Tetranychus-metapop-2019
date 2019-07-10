@@ -163,7 +163,7 @@ beta2_wang_loreau <- function(varcorr, means) {
 ## first the predicted posterior mean patch and metapop-level abundances
 
 
-patch_by_patch_Nmean <- fitted(mod, re_formula = NA, summary = FALSE)[, 1, ]
+patch_by_patch_Nmean <- fitted(mod, re_formula = NA, summary = FALSE)[, 1, ]  ##the array is [posterior sample, observation row, patch]
 metapopNmean <- rowSums(patch_by_patch_Nmean)
 patchNmean <- metapopNmean / 9
 
