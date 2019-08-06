@@ -117,7 +117,7 @@ prior <- c(
  mod <- brm(mvbf(bf11 + bf12 + bf13 +
                 bf21 + bf22 + bf23 +
                 bf31 + bf32 + bf33),
- data = tab, iter = Niter, chains=Nchains, prior = prior
+ data = tab, iter = Niter, chains=Nchains, prior = prior, seed=42
  )
 # takes max 15 min to fit on my laptop
 
@@ -282,7 +282,7 @@ prior2 <- c(
 mod2 <- brm(mvbf(bf11a + bf12a + bf13a +
                 bf21a + bf22a + bf23a +
                 bf31a + bf32a + bf33a),
-data = tab, iter = Niter, chains=Nchains, prior = prior2
+data = tab, iter = Niter, chains=Nchains, prior = prior2, seed=42
 )
 ####### END OF STEP 4
 
