@@ -1,9 +1,14 @@
 ---
-title: "Analysis of replicated Tetranychus metapopulation experiment - abundance and temporal variability"
+title: Analysis of replicated Tetranychus metapopulation experiment - abundance and
+  temporal variability
 author: "Maxime Dahirel"
 date: "08/08/2019"
-output: html_document
+output:
+  word_document: default
+  html_document: default
+    bibliography: tetranychus-metapop-2019-refs.bib
 ---
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
@@ -11,11 +16,11 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 
 Content table
 
-This script relies heavily on REF (for converting latent-scale variance-covariance matrices to observed scale) and REF (for the principle and formula of alpha, beta, gamma variability in metapops). Everything below assumes the user has read these two papers.
+This script relies heavily on de Villemereuil et al. [-@villemereuil_general_2016] (for converting latent-scale variance-covariance matrices to observed scale) and Wang and Loreau [-@wang_ecosystem_2014] (for the principle and formula of alpha, beta, gamma variability in metapops). Everything below assumes the user has read these two papers.
 
 # Part 1 : Preparation
 
-This script assumes the "tetranychus-metapop-2019-dataset.csv" dataset is loaded under the name data, using e.g. something like that
+This script assumes the "tetranychus-metapop-2019-dataset.csv" dataset is loaded under the name data, using e.g. something like this:
 
 ```{r data_load, message=FALSE}
 library(readr)
@@ -24,16 +29,23 @@ data <- read_delim("tetranychus-metapop-2019-dataset.csv",
                    trim_ws = TRUE)
 ```
 
-The variables are as follow
+The variables in data are as follow:
 
-```{r metadata}
-#metadata
-```
+|Variable name| Description|
+|:------|:---------|
+|METAPOP_ID| unique ID for each replicate metapopulation|
+|LENGTH| length of bridges between patches in the metapopulation (4,8, or 16 cm)|
+|SHUFFLE| within-metapopulation reshuffling treatment. NO: control, no reshuffling, R: reshuffling|
+|REPLICATE|replicate metapopulation number within a treatment set. REPLICATE, SHUFFLE and LENGTH combine to give METAPOP_ID|
+|PATCH|Patch location in the 3 by 3 metapopulation (written as row.column) |
+|WEEK|weeks since the start of data collection (first week coded as 1)|
+|AFEMA|number of adult females present on patch|
+
 
 ## 1A - packages
 
-First, we’re going to load all the packages we need. This includes the tidyverse packages, for data wrangling at the beginning and plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results.
-This script uses the Stan language for model fitting.  The RStan package containing Stan has a non-standard installation process, please check online: https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started . The brms package (REF) allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The QGglmm package....
+First, we’re going to load all the packages we need. This includes the tidyverse packages, for data wrangling at the beginning and summarising/plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results.
+This script uses the Stan language for model fitting.  The RStan package containing Stan has a non-standard installation process, please check online: https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started . The brms package (REF) allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The QGglmm package (REF) is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.
 
 ```{r packages, message=FALSE}
 library(tidyverse)
@@ -50,21 +62,21 @@ library(QGglmm) ##this package is needed to convert variance-covariance matrices
 
 ```
 
-We’re going to set some Stan options, and create variables to create some others for later. These can be adjusted depending on models. More chains (Nchains)/longer (Niter) chains than the default can be useful to ensure convergence.  mc.cores tells R how many cores Stan can use simultaneously. You can fit as many chains simultaneously as there are cores available. If Nchains > mc.cores, they will simply be fitted sequentially. The setup below uses all the chains; this can make it difficult to use a laptop for other tasks.
+Then we’re going to set some Stan options, and create variables to set some others later. These can be adjusted depending on models. More (Nchains)/longer (Niter) chains than the default can be useful to ensure convergence.  mc.cores tells R how many cores Stan can use simultaneously. You can fit as many chains simultaneously as there are cores available. If Nchains > mc.cores, they will simply be fitted sequentially. The setup below uses all the chains; this can make it difficult to use a laptop for other tasks while model is fitting.
 
 ```{r settings}
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores()) ## options to use all parallel cores during model fitting (1 chain per core)
 ## if this slows down too much, change
 Nchains <- 4
-Niter <- 4000 
+Niter <- 2000 
 Nwarmup <- Niter/2
 ## some default seetings, to be adjusted if not enough for model convergence
 ```
 
 ## 1B – data wrangling
 
-In the raw dataset, data are stored so that there is one column for all population sizes, and a column saying which patch (coded by row and column) it belongs to. To fit our multivariate model, we need one column per patch position:
+In the raw dataset, data are stored so that there is one column for all population sizes, and a column saying which patch it belongs to. To fit our multivariate model, we need one column per patch position:
 
 ```{r data_reshape}
 data$PATCH2 <- paste("P", data$PATCH, sep = "")
@@ -83,14 +95,15 @@ tab <- data %>%
 ```
 
 The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its full state at one time point). Note that we also removed rows that contained NAs. With a normally distributed variable we could have imputed them in-model (and thus avoid throwing an entire row of 9 patches for only one NA). This is not possible (yet?) for count data. It’s OK, only 3 rows are discarded out of ~550.
+The WEEK2 variable is useful to fit separate random effects per replicate (this is because in brms, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation)
 
 ## 1-C Functions for alpha, beta, gamma variability (Wang and Loreau 2014)
 
-One of the aims of this script is estimate the alpha, beta and gamma variability metrics proposed by REF, while accounting for among metapopulation-variability. I’ve written short functions that calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
+One of the aims of this script is estimate the alpha, beta and gamma variability metrics proposed by Wang and Loreau (2014)[-@wang_ecosystem_2014], while accounting for among metapopulation-variability. I’ve written short functions that calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
 
 ```{r wang_loreau}
 
-###add error checks
+###TO DO: add error checks
 
 alpha_wang_loreau <- function(varcorr, means) {
   return((sum(sqrt(diag(varcorr))) / sum(means))^2)
@@ -116,82 +129,98 @@ beta2_wang_loreau <- function(varcorr, means) {
 }
 ```
 
-# Part 2- Fitting the model(s)
+# Part 2 - Fitting the model(s)
 
-We fit a multivariate generalized linear model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes "random" effects for each metapopulation replicates (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance. This is this second effect we are most interested in here.
+## 2A - Model description
+
+We fit a multivariate generalized linear model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance. This is this second effect we are most interested in here.
 The basic formula for the model is as follow:
 
 [latex formula to add later]
 
-(you can see we are estimating a separate temporal variance-covariance matrix for each replicate. We will average everything in this end, but given the non-linearities everywhere, it is probably best to calculate everything replicate by replicate and only average the final results)
+(you can see we are estimating a separate temporal variance-covariance matrix for each replicate. We will average everything in this end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results)
 We can add a treatment effect to it, in the fixed effects, to estimate whether our treatments affect mean population size.  We do not need to alter the temporal variance-covariance matrix if we decide to add a treatment effect. Indeed it’s already split by replicate metapopulation; if we want to know how it varies by treatment, we will average our final replicate-level metrics at the end by treatment instead of averaging all the replicates together.
+
+## 2B - Implementation - formulas
+
 This is implemented in R as follow. First, a bit to modify to set whether or not there is going to be a treatment effect:
 
 ```{r treatment_select}
-which.trt=c("SHUFFLE")  ###you say HERE what treatment you want, if you want an interaction, just put c("FACTOR1","FACTOR2")
-##if you want the model with everything pooled, keep the NA
+which.trt=c("SHUFFLE")  ## CHANGE as needed
+###^you say in which.trt what treatment you want, if you want an interaction, just put c("FACTOR1","FACTOR2")
+##if you want the model with everything pooled, put NA
 ##it converts it as a factor automatically
-shared.among.metapop.var= FALSE ##if common among metapop variance
+
+shared.among.metapop.var= TRUE ##DO NOT CHANGE, here for completedness only
+###^ if TRUE (default), means the metapopulation random effect is common to all replicates
+### if FALSE and which.trt!= NA, we estimate different metapopulation random effects for each treatment
+### interesting in theory (do different treatment drift at the same rate?)
+### but not enough replicates to do that (in some cases only 3 replicates to estimate a correlation :( )
 ```
 
 And then we select the right model formula based on this.
 
 ```{r formula_build}
-if(is.na(which.trt)==TRUE){ ##model formula if we assume no treatment effect whatsoever
-  
-  metapopformula<-mvbf(
-    bf(P11 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P12 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P13 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P21 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P22 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P23 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P31 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P32 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P33 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson)
+if (is.na(which.trt) == TRUE) { ## model formula if we assume no treatment effect whatsoever
+
+  metapopformula <- mvbf(
+    bf(P11 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P12 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P13 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P21 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P22 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P23 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P31 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P32 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P33 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson)
   )
 }
 
-if(is.na(which.trt)==FALSE){ ##so what is the model formula if we want to test the effect of treatment?
+## see vignette("brms_multivariate") for help on the syntax above, in particular the (1|P|random effect) syntax
+## see ?gr() for help too if needed
 
-if (length(which.trt)==1)
-{tab$TREATMENT<-factor(pull(tab[,which.trt]))}
-if (length(which.trt)==2)
-{tab$TREATMENT<-interaction (pull(tab[,which.trt[1]]),pull(tab[,which.trt[2]]))}
+if (is.na(which.trt) == FALSE) { ## so what is the model formula if we want to test the effect of treatment?
 
- if(shared.among.metapop.var==TRUE){ 
-  metapopformula<-mvbf(
-    bf(P11 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P12 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P13 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P21 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P22 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P23 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P31 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P32 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-    bf(P33 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson)
-  )
- }
-  
- if(shared.among.metapop.var==FALSE){ 
-    metapopformula<-mvbf(
-      bf(P11 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID,by=TREATMENT)) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-      bf(P12 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID,by=TREATMENT)) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-      bf(P13 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID,by=TREATMENT)) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-      bf(P21 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID,by=TREATMENT)) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-      bf(P22 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID,by=TREATMENT)) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-      bf(P23 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID,by=TREATMENT)) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-      bf(P31 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID,by=TREATMENT)) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-      bf(P32 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID,by=TREATMENT)) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson) +
-      bf(P33 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID,by=TREATMENT)) + (1 | Q | gr(WEEK2,by=METAPOP_ID)), family = poisson)
+  if (length(which.trt) == 1) {
+    tab$TREATMENT <- factor(pull(tab[, which.trt]))
+  }
+  if (length(which.trt) == 2) {
+    tab$TREATMENT <- interaction(pull(tab[, which.trt[1]]), pull(tab[, which.trt[2]]))
+  }
+
+  if (shared.among.metapop.var == TRUE) {
+    metapopformula <- mvbf(
+      bf(P11 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P12 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P13 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P21 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P22 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P23 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P31 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P32 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P33 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson)
     )
-  } 
-  
+  }
+
+  if (shared.among.metapop.var == FALSE) {
+    metapopformula <- mvbf(
+      bf(P11 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P12 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P13 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P21 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P22 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P23 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P31 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P32 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P33 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson)
+    )
+  }
 }
 ```
 
-(note the ~0 + TREATMENT, rather than ~TREATMENT syntax. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed. See REF schielzelth and mcelreath (the latter calls it “indexing” or something like that.
+(note the ~0 + TREATMENT, rather than ~TREATMENT syntax in the fixed effects. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed. See REF schielzelth and mcelreath (the latter calls it “indexing” or something like that.
 
+## 2C - Implementation - choosing priors
 
 We then select our prior. The priors I propose here are weakly informative and based on REF. For the fixed effects coefficients (corresponding to latent grand means of single patch population size), I based myself on previous papers
 
@@ -214,6 +243,8 @@ if(is.na(which.trt)==FALSE){
 }
 ```
 
+## 2D - Implementation - fitting
+
 We can now fit the model based on the choices we made earlier
 
 ```{r model_fitting}
@@ -221,62 +252,78 @@ mod <- brm(metapopformula,data = tab, iter = Niter, warmup = Nwarmup, chains=Nch
 ```
 
 Note that it can take some time to finish (around 1h per 2000 iterations for a 4-chain model in my laptop).
+(of course you can change the model name if you fit several models to compare in the same session)
 
-# Part3-Extracting key metrics from model output
+## 2D - Model comparison
 
-A big function that take a model as input and give all metrics as output
+add stuff about WAIC/LOO/K-Fold, and loo_compare()
 
+# Part3 - Extracting key metrics from model output
+
+Once, we have fitted and chosen a model, it's time to extract what we need from it. I've made a function a brms model as input and give all metrics we need as output (it only works on one of the models that can be specified via the script above, of course)
+
+In some places in the function you will see 3-dimensional arrays called. This is going to be the typical structure of many parts of a multivariate object:
+
+model_part[X,Y,Z],
+X = posterior sample index
+Y = data observation row
+Z = response variable (here, patches)
 
 ```{r metrics_calculation_function}
-###need a rewrite to optimise it with apply
+###!!!!! need a rewrite to optimise it with apply
 metrics_estimate <- function(mod = mod){
 
 tab_results<-list(NA)
 
 METAPOPlevels<-levels(factor(tab$METAPOP_ID))
 
-for (h in 1:length(METAPOPlevels)){
+for (h in 1:length(METAPOPlevels)){ ##we do everything metapop by metapop first
   
   tab_subset <-subset(tab,METAPOP_ID==METAPOPlevels[h])
   
   patch_by_patch_Nmean <- apply(fitted(mod, newdata=tab_subset, summary = FALSE),3,rowMeans) 
-
+  ##predictions of the number of mites for each patch at each time
   
-  metapopNmean <- rowSums(patch_by_patch_Nmean)
+  metapopNmean <- rowSums(patch_by_patch_Nmean) #metapop size = sum of all patches
   patchNmean <- metapopNmean / 9
   
-  ### there are three types of patch in a metapop differing in level of connectedness
+  ### there are three types of patch in a metapop differing in level of local connectedness
   ### we can calculate mean patch size for each of them and compare them
   Nmean_corners <- rowMeans(patch_by_patch_Nmean[, c(1, 3, 7, 9)])
   Nmean_center <- patch_by_patch_Nmean[, 5]
   Nmean_sides <- rowMeans(patch_by_patch_Nmean[, c(2, 4, 6, 8)])
   
+  ### get intercept means on the latent scale, excluding time effect
+  ### BUT including the METAPOP_ID average effect
+  ### (remember, we are working replicate by replicate, so this is needed
+  ### to have the correct latent intercept)
  if(is.na(which.trt)==TRUE){ 
   latent_intercept <- as.data.frame(fixef(mod, summary = FALSE)) + 
-    ranef(mod,summary=FALSE)$METAPOP_ID[,METAPOPlevels[h],] ### intercept means on the latent scale, excluding time effect
+    ranef(mod,summary=FALSE)$METAPOP_ID[ ,METAPOPlevels[h], ] 
  }
-  
- if(is.na(which.trt)==FALSE){
+
+ if(is.na(which.trt)==FALSE){ 
   latent_intercept <- as.data.frame(fixef(mod, summary = FALSE))%>%
     select(contains(paste("TREATMENT",unique(tab_subset$TREATMENT),sep=""))) + 
-    ranef(mod,summary=FALSE)$METAPOP_ID[,METAPOPlevels[h],]
+    ranef(mod,summary=FALSE)$METAPOP_ID[ ,METAPOPlevels[h], ]
 }
   
   
+  ###get the latent TIME variance-covariance matrix for the metapop we're currently in
   include=colnames(VarCorr(mod,summary=FALSE)$WEEK2$cov)
   include=include[str_detect(include,pattern=METAPOPlevels[h])]
-  
   vcv_latent_time <- VarCorr(mod,summary=FALSE)$WEEK2$cov[,include,include]
   
 
-  vcv_obs_time <- vcv_latent_time ## just to create a dummy array; values will be filled with correct values below
+  ### convert from latent TIME VCV matrix to observed scale VCV matrix
+  ## first, create a dummy array; values will be filled with correct values below
+  vcv_obs_time <- vcv_latent_time 
   
-  ## see de Villemereuil et al Genetics paper and QGglmm packages for details
-  ## but broad description is
-  ## for each posterior sample, create a vector psi, then fill it with value for each patch
+  ## !Read the de Villemereuil et al Genetics paper and QGglmm package help for details
+  ## but broad description of what happens below is
+  ## for each posterior sample (nsamples(mod)), create a vector psi, then fill it with value for each patch
   ## then use this psi to get the observed VCV from the latent VCV
   ## repeat for all posterior samples
-  
   for (i in 1:nsamples(mod)) {
     psiM <- NA
     for (j in 1:9) {
@@ -297,50 +344,59 @@ for (h in 1:length(METAPOPlevels)){
     gamma[i] <- gamma_wang_loreau(vcv_obs_time[i, , ], patch_by_patch_Nmean[i, ])
   }
   
+  ###group our metrics of interest in a data.frame
   metrics <- data.frame(
     metapopNmean = metapopNmean, patchNmean = patchNmean,
     Nmean_corners = Nmean_corners, Nmean_center = Nmean_center, Nmean_sides = Nmean_sides,
     alpha = alpha, beta1 = alpha/gamma, beta2 = alpha-gamma, gamma = gamma, 
     METAPOP_ID = as.character(METAPOPlevels[h]), TREATMENT="all", which_model = deparse(substitute(mod))
-  )
+  ) %>% 
+    ###precalculate within metapopulations differences BEFORE averaging
+    mutate(deltaN_corners_center=Nmean_corners-Nmean_center,
+         deltaN_sides_center=Nmean_sides-Nmean_center,
+         deltaN_corners_sides=Nmean_corners-Nmean_sides)
   
+  ###if the model has a TREATMENT effect, replace the default ("all") by the correct TREATMENT in the output table
   if(is.na(which.trt)==FALSE){
     metrics$TREATMENT <- as.character(unique(tab_subset$TREATMENT))
 }
   
+  ###add MCMC iteration number to table, important to compute differences among groups later
   metrics <- as_tibble(metrics) %>% 
     add_column(.iteration=1:dim(metrics)[1])  ##across all chains together
   
+  ###we store the output for each metapop in a list...
   tab_results[[h]]<-metrics
   
 }
 
+###...and then we bind all the tables in the list together
 tab_results<-bind_rows(tab_results) %>% 
-  mutate(deltaN_corners_center=Nmean_corners-Nmean_center,
-         deltaN_sides_center=Nmean_sides-Nmean_center,
-         deltaN_corners_sides=Nmean_corners-Nmean_sides) %>% 
-  group_by(TREATMENT,which_model,.iteration) %>% summarize_if(is.numeric, mean)  #alt: list(mean,var) 
+  group_by(TREATMENT,which_model,.iteration) %>% summarize_if(is.numeric, mean)  #alt: list(mean,var)
+##the very last line above is where we finally group metrics calculated at the replicate level
+##and average them through the whole dataset/by treatment
 
 return(tab_results)
 }
 ```
 
-once the function is written, to get what we want, we just have to
+Once the function is in the environment, to get what we want, we just have to do this:
 ```{r get_results}
-tab_results<-metrics_estimate(mod) ##change model name as appropriate here
+tab_results<-metrics_estimate(mod = mod) ##change model name as appropriate here
 ```
-(Note: it it will take time to go through the loop)
+(Note: it will take time to go through the loop, I need to optimise the function)
 
 # Part 4- Summarizing the output and inference
 
+Here are some examples of ways to visualize and do comparisons on the output. Please look the help for the different functions, and the tidybayes package help for other ideas and suggestions.
 ```{r summary_inference_plot}
-ggplot(tab_results)+geom_density(aes(beta1,col=TREATMENT))
+ggplot(tab_results)+geom_density(aes(metapopNmean,col=TREATMENT))
 
-##calculating differences
-#
-compare_levels(tab_results,variable="gamma",by=TREATMENT) %>%
+
+##calculating differences between treatment using compare_levels
+compare_levels(tab_results,variable="metapopNmean",by=TREATMENT) %>%
   ggplot() +
-  geom_halfeyeh(aes(y= TREATMENT, x = gamma))+
+  geom_halfeyeh(aes(y= TREATMENT, x = metapopNmean))+
   geom_vline(xintercept=0)
 ```
 
