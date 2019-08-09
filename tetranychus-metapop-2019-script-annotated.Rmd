@@ -193,7 +193,7 @@ We can add a treatment effect to it, in the fixed effects, to estimate whether o
 This is implemented in R as follow. First, a bit to modify to set whether or not there is going to be a treatment effect:
 
 ```{r treatment_select}
-which.trt <- c("SHUFFLE") ## CHANGE as needed
+which.trt <- c("LENGTH") ## CHANGE as needed
 ### ^you say in which.trt what treatment you want, if you want an interaction, just put c("FACTOR1","FACTOR2")
 ## if you want the model with everything pooled, put NA
 ## it converts it as a factor automatically
@@ -269,22 +269,24 @@ if (is.na(which.trt) == FALSE) { ## so what is the model formula if we want to t
 
 ## 2C - Implementation - choosing priors
 
-We then select our prior. The priors I propose here are weakly informative (see McElreath [-@mcelreath_statistical_2016]). For the fixed effects coefficients (corresponding to latent grand means of single patch population size), I based myself roughly on the population densities in van Petegem et al [-@van_petegem_kin_2018] and Bitume et al [-@bitume_dispersal_2014] (multiplied to account for our patch size: 5 by 5 cm)
+We then select our prior. The priors I propose here are weakly informative (see McElreath [-@mcelreath_statistical_2016]). For the fixed effects coefficients (corresponding to latent, ie on log scale, grand means of single patch population size), I based myself roughly on the population densities in van Petegem et al [-@van_petegem_kin_2018] and Bitume et al [-@bitume_dispersal_2014] (multiplied to account for our patch size: 5 by 5 cm)
 
 ```{r prior_setting}
 
 if (is.na(which.trt) == TRUE) {
   prior <- c(
-    set_prior("normal(5,0.5)", class = "Intercept", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("exponential(1)", class = "sd", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(3,1.5)", class = "Intercept", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("exponential(2)", class = "sd", group = "METAPOP_ID", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("exponential(1)", class = "sd", group="WEEK2", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
     set_prior("lkj(2)", class = "cor") # midly skeptical of very high correlations (positive or negative)
   )
 }
 
 if (is.na(which.trt) == FALSE) {
   prior <- c(
-    set_prior("normal(5,0.5)", class = "b", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("exponential(1)", class = "sd", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(3,1.5)", class = "b", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("exponential(2)", class = "sd", group = "METAPOP_ID", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("exponential(1)", class = "sd", group="WEEK2", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
     set_prior("lkj(2)", class = "cor") # midly skeptical of very high correlations (positive or negative)
   )
 }
@@ -340,7 +342,7 @@ metrics_estimate <- function(mod = mod) {
   tab_results <- list(NA)
 
   METAPOPlevels <- levels(factor(tab$METAPOP_ID))
-  ###○an object with each metapop name so we can loop and call their names as needed
+  ###an object with each metapop name so we can loop and call their names as needed
 
   for (h in 1:length(METAPOPlevels)) { ## we do everything metapop by metapop first
 
@@ -437,7 +439,7 @@ metrics_estimate <- function(mod = mod) {
   }
 
   ### ...and then we bind all the tables in the list together
-  tab_results <- bind_rows(tab_results) %>%
+  tab_results <- bind_rows(tab_results) %>% #I need to find a way not to have the binding character and factor warning (it's just a warning)
     group_by(TREATMENT, which_model, .iteration) %>%
     summarize_if(is.numeric, mean) # alt: list(mean,var)
   ## the very last line above is where we finally group metrics calculated at the replicate level
