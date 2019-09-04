@@ -105,15 +105,30 @@ One of the aims of this script is estimate the alpha, beta and gamma variability
 
 ```{r wang_loreau}
 
-### TO DO: add error checks
-
 alpha_wang_loreau <- function(varcorr, means) {
-  return((sum(sqrt(diag(varcorr))) / sum(means))^2)
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop("Error(not a vector): means should be a vector of numeric values (abundances)")
+    if(!is.numeric(means)) stop("Error(not numeric): means should be a vector of numeric values (abundances)")
+    if(length(dim(varcorr))>2) stop("Error: varcorr matrix should be a 2-dimensional matrix")
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop("Error: varcorr matrix should be a square matrix")
+    if(dim(varcorr)[1] != length(means)) stop("Error: varcorr matrix and means should have same dimensions")
+  
+  CV_L = sum(sqrt(diag(varcorr))) / sum(means)
+  return(CV_L^2)
 }
 
 gamma_wang_loreau <- function(varcorr, means) {
-  sqrt_w_bar <- sum(sqrt(diag(varcorr))) / length(means)
-  return((sqrt(sum(varcorr)) / sum(means))^2)
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop("Error(not a vector): means should be a vector of numeric values (abundances)")
+    if(!is.numeric(means)) stop("Error(not numeric): means should be a vector of numeric values (abundances)")
+    if(length(dim(varcorr))>2) stop("Error: varcorr matrix should be a 2-dimensional matrix")
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop("Error: varcorr matrix should be a square matrix")
+    if(dim(varcorr)[1] != length(means)) stop("Error: varcorr matrix and means should have same dimensions")
+  
+  CV_M = sqrt(sum(varcorr)) / sum(means)
+  return(CV_M^2)
 }
 
 # no function for beta 1, it's simply 1/phi or alpha/gamma
@@ -122,10 +137,23 @@ gamma_wang_loreau <- function(varcorr, means) {
 # beta 1: see above, beta2 = alpha - gamma
 
 phi_wang_loreau <- function(varcorr) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+  if(length(dim(varcorr))>2) stop("Error: varcorr matrix should be a 2-dimensional matrix")
+  if(dim(varcorr)[1] != dim(varcorr)[2]) stop("Error: varcorr matrix should be a square matrix")
+    
   return(sum(varcorr) / (sum(sqrt(diag(varcorr))))^2)
 }
 
 beta2_wang_loreau <- function(varcorr, means) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop("Error(not a vector): means should be a vector of numeric values (abundances)")
+    if(!is.numeric(means)) stop("Error(not numeric): means should be a vector of numeric values (abundances)")
+    if(length(dim(varcorr))>2) stop("Error: varcorr matrix should be a 2-dimensional matrix")
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop("Error: varcorr matrix should be a square matrix")
+    if(dim(varcorr)[1] != length(means)) stop("Error: varcorr matrix and means should have same dimensions")
+  
   sqrt_w_bar <- sum(sqrt(diag(varcorr))) / length(means)
   return((sqrt_w_bar^2 - (sum(varcorr)) / (length(means)^2)) / mean(means)^2)
 }
