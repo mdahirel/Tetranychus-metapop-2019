@@ -271,7 +271,6 @@ code {
 }
 img {
   max-width:100%;
-  height: auto;
 }
 .tabbed-pane {
   padding-top: 12px;
@@ -443,8 +442,9 @@ library(QGglmm) ## this package is needed to convert variance-covariance matrice
 options(mc.cores = parallel::detectCores()) ## options to use all parallel cores during model fitting (1 chain per core)
 ## if this slows down too much, change
 Nchains &lt;- 4
-Niter &lt;- 2000
-Nwarmup &lt;- Niter / 2
+Nwarmup &lt;- 10000
+Niter &lt;- NWarmup + 2000
+
 ## some default seetings, to be adjusted if not enough for model convergence</code></pre>
 </div>
 <div id="b-data-wrangling" class="section level2">
@@ -468,15 +468,30 @@ tab &lt;- data %&gt;%
 <div id="c-functions-for-alpha-beta-gamma-variability-wang-and-loreau-2014" class="section level2">
 <h2>1-C Functions for alpha, beta, gamma variability (Wang and Loreau 2014)</h2>
 <p>One of the aims of this script is estimate the alpha, beta and gamma variability metrics proposed by Wang and Loreau <span class="citation">(2014)</span>, while accounting for among metapopulation-variability. I’ve written short functions that calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).</p>
-<pre class="r"><code>### TO DO: add error checks
-
-alpha_wang_loreau &lt;- function(varcorr, means) {
-  return((sum(sqrt(diag(varcorr))) / sum(means))^2)
+<pre class="r"><code>alpha_wang_loreau &lt;- function(varcorr, means) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop(&quot;Error(not a vector): means should be a vector of numeric values (abundances)&quot;)
+    if(!is.numeric(means)) stop(&quot;Error(not numeric): means should be a vector of numeric values (abundances)&quot;)
+    if(length(dim(varcorr))&gt;2) stop(&quot;Error: varcorr matrix should be a 2-dimensional matrix&quot;)
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop(&quot;Error: varcorr matrix should be a square matrix&quot;)
+    if(dim(varcorr)[1] != length(means)) stop(&quot;Error: varcorr matrix and means should have same dimensions&quot;)
+  
+  CV_L = sum(sqrt(diag(varcorr))) / sum(means)
+  return(CV_L^2)
 }
 
 gamma_wang_loreau &lt;- function(varcorr, means) {
-  sqrt_w_bar &lt;- sum(sqrt(diag(varcorr))) / length(means)
-  return((sqrt(sum(varcorr)) / sum(means))^2)
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop(&quot;Error(not a vector): means should be a vector of numeric values (abundances)&quot;)
+    if(!is.numeric(means)) stop(&quot;Error(not numeric): means should be a vector of numeric values (abundances)&quot;)
+    if(length(dim(varcorr))&gt;2) stop(&quot;Error: varcorr matrix should be a 2-dimensional matrix&quot;)
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop(&quot;Error: varcorr matrix should be a square matrix&quot;)
+    if(dim(varcorr)[1] != length(means)) stop(&quot;Error: varcorr matrix and means should have same dimensions&quot;)
+  
+  CV_M = sqrt(sum(varcorr)) / sum(means)
+  return(CV_M^2)
 }
 
 # no function for beta 1, it&#39;s simply 1/phi or alpha/gamma
@@ -485,10 +500,23 @@ gamma_wang_loreau &lt;- function(varcorr, means) {
 # beta 1: see above, beta2 = alpha - gamma
 
 phi_wang_loreau &lt;- function(varcorr) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+  if(length(dim(varcorr))&gt;2) stop(&quot;Error: varcorr matrix should be a 2-dimensional matrix&quot;)
+  if(dim(varcorr)[1] != dim(varcorr)[2]) stop(&quot;Error: varcorr matrix should be a square matrix&quot;)
+    
   return(sum(varcorr) / (sum(sqrt(diag(varcorr))))^2)
 }
 
 beta2_wang_loreau &lt;- function(varcorr, means) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop(&quot;Error(not a vector): means should be a vector of numeric values (abundances)&quot;)
+    if(!is.numeric(means)) stop(&quot;Error(not numeric): means should be a vector of numeric values (abundances)&quot;)
+    if(length(dim(varcorr))&gt;2) stop(&quot;Error: varcorr matrix should be a 2-dimensional matrix&quot;)
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop(&quot;Error: varcorr matrix should be a square matrix&quot;)
+    if(dim(varcorr)[1] != length(means)) stop(&quot;Error: varcorr matrix and means should have same dimensions&quot;)
+  
   sqrt_w_bar &lt;- sum(sqrt(diag(varcorr))) / length(means)
   return((sqrt_w_bar^2 - (sum(varcorr)) / (length(means)^2)) / mean(means)^2)
 }</code></pre>
@@ -549,7 +577,7 @@ R_{TIME}
 <div id="b---implementation---formulas" class="section level2">
 <h2>2B - Implementation - formulas</h2>
 <p>This is implemented in R as follow. First, a bit to modify to set whether or not there is going to be a treatment effect:</p>
-<pre class="r"><code>which.trt &lt;- c(&quot;SHUFFLE&quot;) ## CHANGE as needed
+<pre class="r"><code>which.trt &lt;- c(&quot;LENGTH&quot;) ## CHANGE as needed
 ### ^you say in which.trt what treatment you want, if you want an interaction, just put c(&quot;FACTOR1&quot;,&quot;FACTOR2&quot;)
 ## if you want the model with everything pooled, put NA
 ## it converts it as a factor automatically
@@ -619,19 +647,21 @@ if (is.na(which.trt) == FALSE) { ## so what is the model formula if we want to t
 </div>
 <div id="c---implementation---choosing-priors" class="section level2">
 <h2>2C - Implementation - choosing priors</h2>
-<p>We then select our prior. The priors I propose here are weakly informative (see McElreath <span class="citation">(2016)</span>). For the fixed effects coefficients (corresponding to latent grand means of single patch population size), I based myself roughly on the population densities in van Petegem et al <span class="citation">(2018)</span> and Bitume et al <span class="citation">(2014)</span> (multiplied to account for our patch size: 5 by 5 cm)</p>
+<p>We then select our prior. The priors I propose here are weakly informative (see McElreath <span class="citation">(2016)</span>). For the fixed effects coefficients (corresponding to latent, ie on log scale, grand means of single patch population size), I based myself roughly on the population densities in van Petegem et al <span class="citation">(2018)</span> and Bitume et al <span class="citation">(2014)</span> (multiplied to account for our patch size: 5 by 5 cm)</p>
 <pre class="r"><code>if (is.na(which.trt) == TRUE) {
   prior &lt;- c(
-    set_prior(&quot;normal(5,0.5)&quot;, class = &quot;Intercept&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
-    set_prior(&quot;exponential(1)&quot;, class = &quot;sd&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
+    set_prior(&quot;normal(2,1)&quot;, class = &quot;Intercept&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
+    set_prior(&quot;normal(0,1)&quot;, class = &quot;sd&quot;, group = &quot;METAPOP_ID&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
+    set_prior(&quot;normal(0,1)&quot;, class = &quot;sd&quot;, group=&quot;WEEK2&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
     set_prior(&quot;lkj(2)&quot;, class = &quot;cor&quot;) # midly skeptical of very high correlations (positive or negative)
   )
 }
 
 if (is.na(which.trt) == FALSE) {
   prior &lt;- c(
-    set_prior(&quot;normal(5,0.5)&quot;, class = &quot;b&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
-    set_prior(&quot;exponential(1)&quot;, class = &quot;sd&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
+    set_prior(&quot;normal(2,1)&quot;, class = &quot;b&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
+    set_prior(&quot;normal(0,1)&quot;, class = &quot;sd&quot;, group = &quot;METAPOP_ID&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
+    set_prior(&quot;normal(0,1)&quot;, class = &quot;sd&quot;, group=&quot;WEEK2&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
     set_prior(&quot;lkj(2)&quot;, class = &quot;cor&quot;) # midly skeptical of very high correlations (positive or negative)
   )
 }</code></pre>
@@ -666,7 +696,7 @@ metrics_estimate &lt;- function(mod = mod) {
   tab_results &lt;- list(NA)
 
   METAPOPlevels &lt;- levels(factor(tab$METAPOP_ID))
-  ###○an object with each metapop name so we can loop and call their names as needed
+  ###an object with each metapop name so we can loop and call their names as needed
 
   for (h in 1:length(METAPOPlevels)) { ## we do everything metapop by metapop first
 
@@ -760,7 +790,7 @@ metrics_estimate &lt;- function(mod = mod) {
   }
 
   ### ...and then we bind all the tables in the list together
-  tab_results &lt;- bind_rows(tab_results) %&gt;%
+  tab_results &lt;- bind_rows(tab_results) %&gt;% #I need to find a way not to have the binding character and factor warning (it&#39;s just a warning)
     group_by(TREATMENT, which_model, .iteration) %&gt;%
     summarize_if(is.numeric, mean) # alt: list(mean,var)
   ## the very last line above is where we finally group metrics calculated at the replicate level
