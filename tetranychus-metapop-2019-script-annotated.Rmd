@@ -298,7 +298,7 @@ if (is.na(which.trt) == FALSE) { ## so what is the model formula if we want to t
 
 ## 2C - Implementation - choosing priors
 
-We then select our prior. The priors I propose here are weakly informative (see McElreath [-@mcelreath_statistical_2016]). For the fixed effects coefficients (corresponding to latent, ie on log scale, grand means of single patch population size), I based myself roughly on the population densities in van Petegem et al [-@van_petegem_kin_2018] and Bitume et al [-@bitume_dispersal_2014] (multiplied to account for our patch size: 5 by 5 cm)
+We then select our prior. The priors I propose here are weakly informative (sensu McElreath [-@mcelreath_statistical_2016]).We use narrow tailed priors for random effects to facilitate convergence and to because classical exponential priors imply some very high and implausible population densities when combined and back-transformed.  For the fixed effects coefficients (corresponding to latent, ie on log scale, grand means of single patch population size), I based myself roughly on the population densities in de Roissart et al. (REF to add, for paper and dryad data) (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in de Roissart et al. (which would be something like normal(1.8,0.9)), to avoid giving too much weight to the information from that paper.  
 
 ```{r prior_setting}
 
@@ -470,7 +470,8 @@ metrics_estimate <- function(mod = mod) {
   ### ...and then we bind all the tables in the list together
   tab_results <- bind_rows(tab_results) %>% #I need to find a way not to have the binding character and factor warning (it's just a warning)
     group_by(TREATMENT, which_model, .iteration) %>%
-    summarize_if(is.numeric, mean) # alt: list(mean,var)
+    summarize_if(is.numeric, mean) %>%  # alt: list(mean,var)
+    ungroup()
   ## the very last line above is where we finally group metrics calculated at the replicate level
   ## and average them through the whole dataset/by treatment
 
