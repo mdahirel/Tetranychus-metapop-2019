@@ -16,26 +16,26 @@ csl: journal-of-animal-ecology.csl
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
 ```
 
 
-# Introduction (see paper for details)
+# A brief introduction
 
 (see manuscript/preprint text for more context)
 
 This script analyses data resulting from the study of experimental metapopulations of spider mites *Tetranychus urticae*. Each metapopulation was composed of 9 patches connected by bridges of various lengths. Abundances of adult females were tracked weekly in each patch of each metapopulation. We are interested in the effect of bridge length and randomization treatment (see text) on (meta)population size and various variability metrics. 
 
-This script relies heavily on de Villemereuil et al. [-@villemereuil_general_2016] (for converting latent-scale variance-covariance matrices to observed scale) and Wang and Loreau [-@wang_ecosystem_2014] (for the principle and formula of $\alpha$, $\beta$, $\gamma$ variability in metapopulations). Everything below assumes the user has read these two papers.
+This script relies heavily on de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] (for converting latent-scale variance-covariance matrices to observed scale) and Wang and Loreau [@wangEcosystemStabilitySpace2014](for the principle and formula of $\alpha$, $\beta$, $\gamma$ variability in metapopulations). Everything below assumes the user has read these two papers.
 
 # Part 1 : Preparation
 
 ## 1A - packages
 
-First, we’re going to load all the packages we need. This includes the `tidyverse` packages (http://www.tidyverse.org), for data wrangling at the beginning and summarising/plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results.
-This script uses the Stan language (Carpenter et al [-@carpenter_stan_2017] Stan Development Team [-@stan_development_team_rstan_2018])for model fitting.  The `RStan` package containing Stan has a non-standard installation process, please check online: https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started . The `brms` package (Bürkner [-@burkner_brms_2017]) allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The `QGglmm` package by de Villemereuil [-@villemereuil_general_2016] is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.
+First, we’re going to load all the packages we need. This includes the `tidyverse` packages [@wickhamWelcomeTidyverse2019], for data wrangling at the beginning and summarising/plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results.
+This script uses the Stan language [@carpenterStanProbabilisticProgramming2017; @standevelopmentteamRStanInterfaceStan2018] for model fitting.  The `RStan` package containing Stan has a non-standard installation process, please check online: https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started . The `brms` package [@burknerBrmsPackageBayesian2017] allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The `QGglmm` package by de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.
 
-```{r packages-loading, message=FALSE}
+```{r packages-loading}
 library(tidyverse)
 
 library(rstan) ## Stan
@@ -53,19 +53,19 @@ library(here)
 
 ## some useful default settings
 rstan_options(auto_write = TRUE)
-options(mc.cores = 2) ## if this slows your computer down too much, reduce ; if you have > 4 cores, increase
+options(mc.cores = 2) ## if this slows your computer down too much, reduce ; if you have > 4 cores, you can increase
 N_chains <- 4
-N_warmup <- 500   ## recommended for publication-level quality: 12000 ## 400 is enough for tests
-N_iter <- N_warmup + 500  ## recommended for publication-level quality: N_warmup + 2000  ## Nwarmup + 500 is enough for tests
+N_warmup <- 10000   ## used for publication: 10000 ## 500 is enough for tests
+N_iter <- N_warmup + 3000  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
 
 ```
 
-**Note:** The finished model will be over 1Gb (probably over 2Gb), and so post-processing operations may not be doable on some computer in the current, non-optimized, state of the code.(In some cases, fitting the model may not even be possible, optimization or not!!) If this is the case, we invite you to try a model with a much smaller `N_warmup` and number of iterations post-warmup (100 or 200 instead of 2000). It should be close enough to convergence to allow you to get a general idea of the results.
+**Note:** The finished model will be over 1Gb (probably over 2Gb), and so post-processing operations may not be doable on some computers in the current, non-optimized, state of the code.(In some cases, fitting the model may not even be possible, optimization or not!!) If this is the case, we invite you to try a model with a much smaller `N_warmup` and number of iterations post-warmup (see comments in code chunk above). It should be close enough to convergence, despite warnings, to allow you to get a general idea of the results.
 
 
 ## 1B – data loading and wrangling
 
-```{r data_load, message=FALSE}
+```{r data_load}
 raw_data <- read_csv(here("data","tetranychus-metapop-2019-dataset.csv"))
 ```
 
@@ -74,8 +74,8 @@ The variables in `raw_data` are as follow:
 - `METAPOP_ID`: unique ID for each replicate metapopulation
 - `LENGTH`: length of bridges between patches in the metapopulation (4,8, or 16 cm)
 - `SHUFFLE`: within-metapopulation reshuffling treatment. NO: control, no reshuffling, R: reshuffling
-- `REPLICATE`: replicate metapopulation number within a treatment set. The `METAPOP_ID` string corresponds to "`LENGTH`_`SHUFFLE`_`REPLICATE`"
-- `PATCH`: Patch location in the 3 by 3 metapopulation (written as row.column)
+- `REPLICATE`: replicate metapopulation number within a treatment set. The `METAPOP_ID` string corresponds to "`LENGTH` _ `SHUFFLE` _ `REPLICATE`"
+- `PATCH`: Patch location in the 3 by 3 metapopulation (written as "row.column")
 - `WEEK`: weeks since the start of data collection (first week coded as 1)
 - `AFEMA`: number of adult females counted on patch, our measure of abundance
 
@@ -87,7 +87,7 @@ data <- raw_data %>%
   mutate(PATCH2= paste("P", PATCH, sep = "")) %>% 
   mutate(PATCH2= str_remove(PATCH2, "[.]")) %>% 
 ### the two lines above make patches names (a) easier to use as column names (letter as 1st character)
-### and consistent with brms standards on variable names (best to avoid dots and underscore,
+### and consistent with brms standards on response variable names (best to avoid dots and underscore,
 ### as some functions will remove them for output names and then matching input and output becomes harder)
   select(-c(PATCH)) %>%
   pivot_wider(names_from = PATCH2, values_from = AFEMA) %>%
@@ -95,16 +95,16 @@ data <- raw_data %>%
   mutate(WEEK2 = paste(WEEK, METAPOP_ID))
 
 Npatches <- length(unique(raw_data$PATCH)) ### as a check, counting how many patches there are, should be 9
-### stored as will be useful later
+### stored as may be useful later
 
 ```
 
 The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its full state at one time point). 
 The `WEEK2` variable is useful to fit separate random effects per replicate (this is because in `brms`, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation)
 
-## 1-C Functions for $\alpha$, $\beta$, $\gamma$ variability (Wang and Loreau 2014)
+## 1-C Functions for $\alpha$, $\beta$, $\gamma$ variability
 
-One of the aims of this script is estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wang_ecosystem_2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
+One of the aims of this script is estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
 
 ```{r wang_loreau}
 
@@ -168,14 +168,16 @@ beta2_wang_loreau <- function(varcorr, means) {
 
 We fit a multivariate generalized linear mixed/multilevel model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance. This is this second effect we are most interested in here.
 
-The basic formula for the model for the number of adult females $N$ at patch $i$, in metapopulation $j$, at time $t$:
+The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
 
 $$\begin{equation*}
-N_{[i,j,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,j,t]}) \\
-\log(\lambda_{[i,j,t]}) = \alpha_{[i]} + \beta_{[i,j]} + \gamma_{[i,j,t]} \\
+N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
+\log(\lambda_{[i,1,1,t]}) = \alpha_{[1,1]} + \beta_{[i,1,1]} + \gamma_{[i,1,1,t]} \\
+...\\
+\log(\lambda_{[i,3,3,t]}) = \alpha_{[3,3]} + \beta_{[i,3,3]} + \gamma_{[i,3,3,t]} \\
 
 \mathbf{}\left[\begin{matrix}
-\beta_{[1,j]} \\ ... \\ \beta_{[9,j]} 
+\beta_{[i,1,1]} \\ ... \\ \beta_{[i,3,3]} 
 \end{matrix}\right] \sim {\textrm{MVNormal}}\left(
 
 \mathbf{}
@@ -185,39 +187,39 @@ N_{[i,j,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,j,t]}) \\
 \boldsymbol{\Omega}_{\textrm{METAPOP}}\right)\\
 
 \left[\begin{matrix}
-\gamma_{[1,j,t]} \\ ... \\ \gamma_{[9,j,t]} 
+\gamma_{[i,1,1,t]} \\ ... \\ \gamma_{[i,3,3,t]} 
 \end{matrix}\right] \sim {\textrm{MVNormal}}\left(
 
 \left[\begin{matrix}
 0 \\ ... \\ 0 
 \end{matrix}\right] ,
-\boldsymbol{\Omega}_{\textrm{TIME}[j]}\right)\\
+\boldsymbol{\Omega}_{\textrm{TIME}[i]}\right)\\
 
 \boldsymbol{\Omega}_{\textrm{METAPOP}} = 
 \left(\begin{matrix}
-\sigma_{M[1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[9]} 
+\sigma_{M[1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[3,3]} 
 \end{matrix}\right) 
 \boldsymbol{R}_{\textrm{METAPOP}}
 \left(\begin{matrix}
-\sigma_{M[1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[9]} 
+\sigma_{M[1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[3,3]} 
 \end{matrix}\right)    \\
 
-\boldsymbol{\Omega}_{\textrm{TIME}[j]} = 
+\boldsymbol{\Omega}_{\textrm{TIME}[i]} = 
 \left(\begin{matrix}
-\sigma_{T[1,j]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{T[9,j]} 
+\sigma_{T[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{T[i,3,3]} 
 \end{matrix}\right)  
-\boldsymbol{R}_{\textrm{TIME}[j]}
+\boldsymbol{R}_{\textrm{TIME}[i]}
 \left(\begin{matrix}
-\sigma_{T[1,j]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{T[9,j]} 
+\sigma_{T[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{T[i,3,3]} 
 \end{matrix}\right)    \\
 
 \end{equation*}$$
 
 where $\alpha$ are average patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\gamma$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}$ the correlation matrices.
 
-You can see we are estimating a separate temporal variance-covariance matrix for each replicate $j$. We will average everything in this end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results. Note that this also mean this is a model with observation-level random effects (see Harrison [-@harrison_using_2014]), so no further overdispersion to worry about.
+You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything in the end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results. Note that this also mean this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
 
-We can add a treatment effect to it (so $\alpha_{[i]}$ becomes $\alpha_{[i]\textrm{TREATMENT}[j]}$), to estimate whether our treatments affect mean population size.  We do not need to alter the temporal variance-covariance matrix if we decide to add a treatment effect. Indeed it’s already split by replicate metapopulation; if we want to know how it varies by treatment, we can just average our final replicate-level metrics at the end by treatment instead of averaging all the replicates together.
+We can add a treatment effect to it (so $\alpha_{[x,y]}$ becomes $\alpha_{[x,y]\textrm{TREATMENT}[i]}$), to estimate whether our treatments affect mean population size.  We do not need to alter the temporal variance-covariance matrix if we decide to add a treatment effect. Indeed it’s already split by replicate metapopulation; if we want to know how it varies by treatment, we can just average our final replicate-level metrics at the end by treatment instead of averaging all the replicates together.
 
 ## 2B - Implementation - formulas
 
@@ -236,7 +238,7 @@ shared.among.metapop.var <- TRUE ## DO NOT CHANGE, here for completedness only
 ### but not enough replicates to do that here (in some cases only 3 replicates to estimate a correlation :( )
 ```
 
-And then we select the right model formula based on this.
+And then the script selects the right model formula based on this.
 
 ```{r formula_build}
 if (sum(is.na(which.trt)) > 0) { ## model formula if we assume no treatment effect whatsoever
@@ -296,11 +298,11 @@ if (sum(is.na(which.trt)) == 0) { ## so what is the model formula if we want to 
 }
 ```
 
-(note the ~0 + TREATMENT, rather than ~TREATMENT syntax in the fixed effects. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed, and be sure all prior means have the same precision. See Schielzeth [-@schielzeth_simple_2010] and McElreath [-@mcelreath_statistical_2016].
+(note the `~0 + TREATMENT`, rather than `~TREATMENT` syntax in the fixed effects. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed, and be sure all prior means have the same precision. See Schielzeth [-@schielzethSimpleMeansImprove2010] and McElreath [-@mcelreathStatisticalRethinkingBayesian2020].
 
 ## 2C - Implementation - choosing priors
 
-We then select our priors. The priors I propose here are weakly informative (sensu McElreath [-@mcelreath_statistical_2016]). For the fixed effects coefficients (corresponding to latent, ie on log scale, grand means of single patch population size), I based myself roughly on the population densities in de Roissart et al. (REF to add, for paper and dryad data) (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in de Roissart et al. (which would be something like $Normal(1.8,0.9)$), both to have round numbers and to avoid giving too much weight to the information from that paper.  
+We then select our priors. The priors I propose here are weakly informative [sensu @mcelreathStatisticalRethinkingBayesian2020]. For the fixed effects coefficients (corresponding to latent, i.e. on log scale, grand means of single patch population size), I based myself roughly on the entire distribution of population densities in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015] (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in De Roissart *et al.* (which would be something like $\textrm{Normal}(1.8,0.9)$), both to have round numbers and to avoid giving too much weight to the information from that paper.  
 
 ```{r prior_setting}
 
@@ -330,7 +332,7 @@ We can now fit the model based on the choices we made earlier
 ```{r model_fitting}
 if(file.exists(here("R_output","model.Rdata")))
   # this if-else statement is avoid re-fitting a model if there is already one existing in R_output
-  # to override, re-run the model and re-save manually by selecting relevant code lines (or delete the Rdata object before relaunching this code chunk)
+  # to override, re-run the model and re-save manually by selecting only the relevant code lines (or delete the Rdata object before relaunching this code chunk)
   {
   load(here("R_output","model.Rdata"))
   }else
@@ -351,7 +353,7 @@ Note that it can take some time to finish (around 2000 iterations/h/core in my l
 summary(mod)  #look at Rhat and ESS both tail and bulk
 ```
 
-You also need to check that the model can reproduce the data well, through posterior predictive checks
+You also need to check that the model can reproduce the data well, through posterior predictive checks [@gabryVisualizationBayesianWorkflow2019]
 (here, given we have observation-level random effects, it should be OK)
 
 ```{r model_ppchecks}
@@ -363,7 +365,7 @@ pp_check(mod, resp = "P11", nsamples = 20)
 
 # Part 3 - Extracting key metrics from model output
 
-Once, we have fitted and chosen a model, it's time to extract what we need from it. In the next code chunk, I've made a function that takes a `brms` model as input and give all metrics we need as output (it only works on one of the models that can be specified via the script above, of course).
+Once, we have fitted and chosen a model, it's time to extract what we need from it. In the next code chunk, I've made a function that takes a `brms` model as input and give all metrics we need as output (it only works correctly on one of the models that can be specified via the script above, of course).
 
 The function is *far* from optimized in terms of time or memory use (and I would probably have a look if I had time, e.g. move from `for` loops to `purr`), but it works so <shrug>.
 
@@ -504,16 +506,26 @@ save(list="tab_results", file=here("R_output","tab_results.Rdata"))
 ```
 
 
-# Part 4- Summarizing the output and inference
+# Part 4- Figures
 
-```{r}
+Before doing the figures, we need to recreate the `SHUFFLE` and `LENGTH` columns. We also need to create color palettes that'll be used throughout:
+
+```{r figure_prep}
 tab_results <-tab_results %>% 
   mutate(
     SHUFFLE=str_extract(TREATMENT,"[:upper:]+"),
     LENGTH=str_extract(TREATMENT,"[:digit:]+") %>% as.numeric()
          )
+
+paletteLENGTH <- c("#D55E00", "#E69F00", "#F0E442") #for figures 2 to 4
+paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99") #for figure 5
 ```
 
+## Figure 2
+
+Figs 2 to 4 are each made of 4 panels, one per key variable (metapopulation size, $\alpha,\beta,\gamma$ variabilities). We create each panel separately then use the `patchwork` package to merge them and to apply styles common to all panels.
+
+Figure 2 contains posteriors for the non-shuffled (control) metapopulations:
 
 ```{r fig2}
 
@@ -555,10 +567,14 @@ p2d <- tab2 %>%
   scale_y_discrete("")
 
 (p2a | p2b)/ (p2c | p2d) + plot_annotation(tag_levels = 'A') & 
-  scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) &
+  scale_fill_manual(values = paletteLENGTH) &
   theme_bw() & 
   theme(legend.position = "none", text=element_text(size = 20))
 ```
+
+## Figure 3
+
+Figure 3 contains posteriors for the shuffled metapopulations:
 
 ```{r fig3}
 
@@ -600,12 +616,17 @@ p3d <- tab3 %>%
   scale_y_discrete("")
 
 (p3a | p3b)/ (p3c | p3d) + plot_annotation(tag_levels = 'A') & 
-  scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) & 
+  scale_fill_manual(values = paletteLENGTH) & 
   theme_bw() & 
   theme(legend.position = "none", text=element_text(size = 20))
 
 ```
 
+## Figure 4
+
+Figure 4 contains posteriors of the comparison between shuffled and non shuffled treatments. There are two options here, either use the difference between treatments (chunk `fig4`), or the ratio (`4bis`) between treatments. The ratio may be more appropriate since we are dealing with multiplicative processes:
+
+### Figure 4: additive comparison
 
 ```{r fig4}
 
@@ -616,7 +637,7 @@ p4a <- tab_results %>%
   stat_halfeye(aes(y = factor(LENGTH), x = metapopNmean, fill=factor(LENGTH)),
                point_interval = median_hdi,normalize="xy") +
   geom_vline(xintercept = 0) + 
-  scale_x_continuous("Mean population mean density") +
+  scale_x_continuous("Metapopulation mean density") +
   scale_y_discrete("Length (cm)")
 
 p4b <- tab_results %>% 
@@ -658,10 +679,69 @@ p4d <- tab_results %>%
 
 (p4a | p4b)/ (p4c | p4d) + plot_annotation(title = "Comparisons, shuffled - control", tag_levels = 'A') & 
   theme_bw() & 
-  scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) & 
+  scale_fill_manual(values = paletteLENGTH) & 
   theme(legend.position = "none", text=element_text(size = 20))
 ```
 
+### Figure 4bis: multiplicative comparison
+
+```{r fig4bis}
+p4a <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "metapopNmean", by = SHUFFLE, fun= `/`) %>%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = metapopNmean, fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy") +
+  geom_vline(xintercept = 1) + 
+  scale_x_continuous("Metapopulation mean density") +
+  scale_y_discrete("Length (cm)")
+
+p4b <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "alpha", by = SHUFFLE, fun= `/`) %>%
+  ggplot() +
+  stat_halfeye(data=. %>% filter(alpha<=10), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=alpha,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=alpha,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  geom_vline(xintercept = 1) + 
+  scale_x_continuous("Alpha variability") +
+  scale_y_discrete("")
+
+p4c <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "beta1", by = SHUFFLE, fun= `/`) %>%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = beta1,fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy") +
+  geom_vline(xintercept = 1) +
+  scale_x_continuous("Beta variability") +
+  scale_y_discrete("Length (cm)")
+
+p4d <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "gamma", by = SHUFFLE, fun= `/`) %>%
+  ggplot() +
+  stat_halfeye(data=. %>% filter(gamma<=5), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=gamma,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=gamma,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  geom_vline(xintercept = 1) +
+  scale_x_continuous("Gamma variability") +
+  scale_y_discrete("")
+
+
+(p4a | p4b)/ (p4c | p4d) + plot_annotation(title = "Comparisons, ratio shuffled / control", tag_levels = 'A') & 
+  theme_bw() & 
+  scale_fill_manual(values = paletteLENGTH) & 
+  theme(legend.position = "none", text=element_text(size = 20))
+```
+
+## Figure 5
+
+Figure 5 shows what happens at the local patch scale, depending on the local level of patch connectedness:
 
 ```{r fig5}
 tab_results %>% 
@@ -674,7 +754,7 @@ tab_results %>%
   ggplot()+
   stat_halfeye(aes(x=N_local,y=factor(LENGTH),fill=`local connectedness`, alpha=0.5))+
   scale_x_continuous("mean local population density")+
-  scale_fill_manual(values=c("#e66101", "#fdb863", "#5e3c99"))+
+  scale_fill_manual(values=paletteLOCAL)+
   scale_y_discrete("Length (cm)")+
   scale_alpha(guide="none")+
   facet_grid(rows=vars(SHUFFLE))+
@@ -683,15 +763,17 @@ tab_results %>%
   
 ```
 
+# More on inferences
 
-```{r}
+The function `compare_levels()` used to make Figure 4 can be used to obtain actual numbers and intervals for many comparisons. Only one example displayed here for simplicity, see the help of both functions for more details, and explore:
+
+```{r compare}
 ## an example
 ## calculating differences between treatment using compare_levels
 compare_levels(tab_results, variable = "metapopNmean", by = TREATMENT) %>%
   mean_hdi()
 
-compare_levels(tab_results, variable = "gamma", by = TREATMENT) %>%
-  mean_hdi()
+
 ```
 
 # References

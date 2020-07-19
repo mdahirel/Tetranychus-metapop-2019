@@ -1559,23 +1559,23 @@ div.tocify {
 
 
 
-<h1 class="title toc-ignore">Analysis of replicated Tetranychus metapopulation experiment - abundance and temporal variability</h1>
+<h1 class="title toc-ignore">Analysis of replicated <em>Tetranychus</em> metapopulation experiment - abundance and temporal variability</h1>
 <h4 class="author">Stefano Masier, Frederik Mortier, Maxime Dahirel, Dries Bonte (this code by M. Dahirel and S. Masier)</h4>
 
 </div>
 
 
-<div id="introduction-see-paper-for-details" class="section level1">
-<h1>Introduction (see paper for details)</h1>
+<div id="a-brief-introduction" class="section level1">
+<h1>A brief introduction</h1>
 <p>(see manuscript/preprint text for more context)</p>
 <p>This script analyses data resulting from the study of experimental metapopulations of spider mites <em>Tetranychus urticae</em>. Each metapopulation was composed of 9 patches connected by bridges of various lengths. Abundances of adult females were tracked weekly in each patch of each metapopulation. We are interested in the effect of bridge length and randomization treatment (see text) on (meta)population size and various variability metrics.</p>
-<p>This script relies heavily on de Villemereuil et al. <span class="citation">(2016)</span> (for converting latent-scale variance-covariance matrices to observed scale) and Wang and Loreau <span class="citation">(2014)</span> (for the principle and formula of <span class="math inline">\(\alpha\)</span>, <span class="math inline">\(\beta\)</span>, <span class="math inline">\(\gamma\)</span> variability in metapopulations). Everything below assumes the user has read these two papers.</p>
+<p>This script relies heavily on de Villemereuil <em>et al.</em> <span class="citation">(2016)</span> (for converting latent-scale variance-covariance matrices to observed scale) and Wang and Loreau <span class="citation">(Wang &amp; Loreau, 2014)</span>(for the principle and formula of <span class="math inline">\(\alpha\)</span>, <span class="math inline">\(\beta\)</span>, <span class="math inline">\(\gamma\)</span> variability in metapopulations). Everything below assumes the user has read these two papers.</p>
 </div>
 <div id="part-1-preparation" class="section level1">
 <h1>Part 1 : Preparation</h1>
 <div id="a---packages" class="section level2">
 <h2>1A - packages</h2>
-<p>First, we’re going to load all the packages we need. This includes the <code>tidyverse</code> packages (<a href="http://www.tidyverse.org" class="uri">http://www.tidyverse.org</a>), for data wrangling at the beginning and summarising/plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results. This script uses the Stan language (Carpenter et al <span class="citation">(<span class="citeproc-not-found" data-reference-id="carpenter_stan_2017"><strong>???</strong></span>)</span> Stan Development Team <span class="citation">(<span class="citeproc-not-found" data-reference-id="stan_development_team_rstan_2018"><strong>???</strong></span>)</span>)for model fitting. The <code>RStan</code> package containing Stan has a non-standard installation process, please check online: <a href="https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started" class="uri">https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started</a> . The <code>brms</code> package (Bürkner <span class="citation">(<span class="citeproc-not-found" data-reference-id="burkner_brms_2017"><strong>???</strong></span>)</span>) allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The <code>QGglmm</code> package by de Villemereuil <span class="citation">(2016)</span> is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.</p>
+<p>First, we’re going to load all the packages we need. This includes the <code>tidyverse</code> packages <span class="citation">(Wickham et al., 2019)</span>, for data wrangling at the beginning and summarising/plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results. This script uses the Stan language <span class="citation">(Carpenter et al., 2017; Stan Development Team, 2018)</span> for model fitting. The <code>RStan</code> package containing Stan has a non-standard installation process, please check online: <a href="https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started" class="uri">https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started</a> . The <code>brms</code> package <span class="citation">(Bürkner, 2017)</span> allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The <code>QGglmm</code> package by de Villemereuil <em>et al.</em> <span class="citation">(2016)</span> is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.</p>
 <pre class="r"><code>library(tidyverse)
 
 library(rstan) ## Stan
@@ -1587,16 +1587,17 @@ library(matrixStats)
 
 library(QGglmm) ## this package is needed to convert variance-covariance matrices from latent to data scale
 
+library(patchwork)
+
 library(here)
 
 ## some useful default settings
 rstan_options(auto_write = TRUE)
-options(mc.cores = 2)
-## if this slows down too much, change
+options(mc.cores = 2) ## if this slows your computer down too much, reduce ; if you have &gt; 4 cores, you can increase
 N_chains &lt;- 4
-N_warmup &lt;- 4000
-N_iter &lt;- N_warmup + 2000</code></pre>
-<p><strong>Note:</strong> The finished model will be over 1Gb, and post-processing _ or even fitting _ may not be doable on some computers. If this is the case, we invite you to try a model with a much smaller number of iterations post-warmup (100 or 200). It should be close enough to convergence to allow you to get a general idea of the results</p>
+N_warmup &lt;- 10000   ## used for publication: 10000 ## 500 is enough for tests
+N_iter &lt;- N_warmup + 3000  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests</code></pre>
+<p><strong>Note:</strong> The finished model will be over 1Gb (probably over 2Gb), and so post-processing operations may not be doable on some computers in the current, non-optimized, state of the code.(In some cases, fitting the model may not even be possible, optimization or not!!) If this is the case, we invite you to try a model with a much smaller <code>N_warmup</code> and number of iterations post-warmup (see comments in code chunk above). It should be close enough to convergence, despite warnings, to allow you to get a general idea of the results.</p>
 </div>
 <div id="b-data-loading-and-wrangling" class="section level2">
 <h2>1B – data loading and wrangling</h2>
@@ -1606,8 +1607,8 @@ N_iter &lt;- N_warmup + 2000</code></pre>
 <li><code>METAPOP_ID</code>: unique ID for each replicate metapopulation</li>
 <li><code>LENGTH</code>: length of bridges between patches in the metapopulation (4,8, or 16 cm)</li>
 <li><code>SHUFFLE</code>: within-metapopulation reshuffling treatment. NO: control, no reshuffling, R: reshuffling</li>
-<li><code>REPLICATE</code>: replicate metapopulation number within a treatment set. The <code>METAPOP_ID</code> string corresponds to “<code>LENGTH</code><em><code>SHUFFLE</code></em><code>REPLICATE</code>”</li>
-<li><code>PATCH</code>: Patch location in the 3 by 3 metapopulation (written as row.column)</li>
+<li><code>REPLICATE</code>: replicate metapopulation number within a treatment set. The <code>METAPOP_ID</code> string corresponds to “<code>LENGTH</code> _ <code>SHUFFLE</code> _ <code>REPLICATE</code>”</li>
+<li><code>PATCH</code>: Patch location in the 3 by 3 metapopulation (written as “row.column”)</li>
 <li><code>WEEK</code>: weeks since the start of data collection (first week coded as 1)</li>
 <li><code>AFEMA</code>: number of adult females counted on patch, our measure of abundance</li>
 </ul>
@@ -1616,7 +1617,7 @@ N_iter &lt;- N_warmup + 2000</code></pre>
   mutate(PATCH2= paste(&quot;P&quot;, PATCH, sep = &quot;&quot;)) %&gt;% 
   mutate(PATCH2= str_remove(PATCH2, &quot;[.]&quot;)) %&gt;% 
 ### the two lines above make patches names (a) easier to use as column names (letter as 1st character)
-### and consistent with brms standards on variable names (best to avoid dots and underscore,
+### and consistent with brms standards on response variable names (best to avoid dots and underscore,
 ### as some functions will remove them for output names and then matching input and output becomes harder)
   select(-c(PATCH)) %&gt;%
   pivot_wider(names_from = PATCH2, values_from = AFEMA) %&gt;%
@@ -1624,11 +1625,11 @@ N_iter &lt;- N_warmup + 2000</code></pre>
   mutate(WEEK2 = paste(WEEK, METAPOP_ID))
 
 Npatches &lt;- length(unique(raw_data$PATCH)) ### as a check, counting how many patches there are, should be 9
-### stored as will be useful later</code></pre>
-<p>The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its full state at one time point). The WEEK2 variable is useful to fit separate random effects per replicate (this is because in <code>brms</code>, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation)</p>
+### stored as may be useful later</code></pre>
+<p>The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its full state at one time point). The <code>WEEK2</code> variable is useful to fit separate random effects per replicate (this is because in <code>brms</code>, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation)</p>
 </div>
-<div id="c-functions-for-alpha-beta-gamma-variability-wang-and-loreau-2014" class="section level2">
-<h2>1-C Functions for <span class="math inline">\(\alpha\)</span>, <span class="math inline">\(\beta\)</span>, <span class="math inline">\(\gamma\)</span> variability (Wang and Loreau 2014)</h2>
+<div id="c-functions-for-alpha-beta-gamma-variability" class="section level2">
+<h2>1-C Functions for <span class="math inline">\(\alpha\)</span>, <span class="math inline">\(\beta\)</span>, <span class="math inline">\(\gamma\)</span> variability</h2>
 <p>One of the aims of this script is estimate the <span class="math inline">\(\alpha\)</span>, <span class="math inline">\(\beta\)</span> and <span class="math inline">\(\gamma\)</span> variability metrics proposed by Wang and Loreau <span class="citation">(2014)</span>, while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).</p>
 <pre class="r"><code>alpha_wang_loreau &lt;- function(varcorr, means) {
   varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
@@ -1684,18 +1685,20 @@ beta2_wang_loreau &lt;- function(varcorr, means) {
 }</code></pre>
 </div>
 </div>
-<div id="part-2---fitting-the-models" class="section level1">
-<h1>Part 2 - Fitting the model(s)</h1>
+<div id="part-2---fitting-the-model" class="section level1">
+<h1>Part 2 - Fitting the model</h1>
 <div id="a---model-description" class="section level2">
 <h2>2A - Model description</h2>
 <p>We fit a multivariate generalized linear mixed/multilevel model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes “random” effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance. This is this second effect we are most interested in here.</p>
-<p>The basic formula for the model for the number of adult females <span class="math inline">\(N\)</span> at patch <span class="math inline">\(i\)</span>, in metapopulation <span class="math inline">\(j\)</span>, at time <span class="math inline">\(t\)</span>:</p>
+<p>The formula for the model for the number of adult females <span class="math inline">\(N_{i,x,y,t}\)</span> in metapopulation <span class="math inline">\(i\)</span>, in the patch of coordinates <span class="math inline">\(x,y\)</span> at time <span class="math inline">\(t\)</span> is</p>
 <p>$$<span class="math display">\[\begin{equation*}
-N_{[i,j,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,j,t]}) \\
-\log(\lambda_{[i,j,t]}) = \alpha_{[i]} + \beta_{[i,j]} + \gamma_{[i,j,t]} \\
+N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
+\log(\lambda_{[i,1,1,t]}) = \alpha_{[1,1]} + \beta_{[i,1,1]} + \gamma_{[i,1,1,t]} \\
+...\\
+\log(\lambda_{[i,3,3,t]}) = \alpha_{[3,3]} + \beta_{[i,3,3]} + \gamma_{[i,3,3,t]} \\
 
 \mathbf{}\left[\begin{matrix}
-\beta_{[1,j]} \\ ... \\ \beta_{[9,j]} 
+\beta_{[i,1,1]} \\ ... \\ \beta_{[i,3,3]} 
 \end{matrix}\right] \sim {\textrm{MVNormal}}\left(
 
 \mathbf{}
@@ -1705,42 +1708,43 @@ N_{[i,j,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,j,t]}) \\
 \boldsymbol{\Omega}_{\textrm{METAPOP}}\right)\\
 
 \left[\begin{matrix}
-\gamma_{[1,j,t]} \\ ... \\ \gamma_{[9,j,t]} 
+\gamma_{[i,1,1,t]} \\ ... \\ \gamma_{[i,3,3,t]} 
 \end{matrix}\right] \sim {\textrm{MVNormal}}\left(
 
 \left[\begin{matrix}
 0 \\ ... \\ 0 
 \end{matrix}\right] ,
-\boldsymbol{\Omega}_{\textrm{TIME}[j]}\right)\\
+\boldsymbol{\Omega}_{\textrm{TIME}[i]}\right)\\
 
 \boldsymbol{\Omega}_{\textrm{METAPOP}} = 
 \left(\begin{matrix}
-\sigma_{M[1]} &amp; 0 &amp; ... \\ 0 &amp; \ddots  \\ \vdots &amp; &amp; \sigma_{M[9]} 
+\sigma_{M[1,1]} &amp; 0 &amp; ... \\ 0 &amp; \ddots  \\ \vdots &amp; &amp; \sigma_{M[3,3]} 
 \end{matrix}\right) 
 \boldsymbol{R}_{\textrm{METAPOP}}
 \left(\begin{matrix}
-\sigma_{M[1]} &amp; 0 &amp; ... \\ 0 &amp; \ddots  \\ \vdots &amp; &amp; \sigma_{M[9]} 
+\sigma_{M[1,1]} &amp; 0 &amp; ... \\ 0 &amp; \ddots  \\ \vdots &amp; &amp; \sigma_{M[3,3]} 
 \end{matrix}\right)    \\
 
-\boldsymbol{\Omega}_{\textrm{TIME}[j]} = 
+\boldsymbol{\Omega}_{\textrm{TIME}[i]} = 
 \left(\begin{matrix}
-\sigma_{T[1,j]} &amp; 0 &amp; ... \\ 0 &amp; \ddots  \\ \vdots &amp; &amp; \sigma_{T[9,j]} 
+\sigma_{T[i,1,1]} &amp; 0 &amp; ... \\ 0 &amp; \ddots  \\ \vdots &amp; &amp; \sigma_{T[i,3,3]} 
 \end{matrix}\right)  
-\boldsymbol{R}_{\textrm{TIME}[j]}
+\boldsymbol{R}_{\textrm{TIME}[i]}
 \left(\begin{matrix}
-\sigma_{T[1,j]} &amp; 0 &amp; ... \\ 0 &amp; \ddots  \\ \vdots &amp; &amp; \sigma_{T[9,j]} 
+\sigma_{T[i,1,1]} &amp; 0 &amp; ... \\ 0 &amp; \ddots  \\ \vdots &amp; &amp; \sigma_{T[i,3,3]} 
 \end{matrix}\right)    \\
 
 \end{equation*}\]</span>$$</p>
 <p>where <span class="math inline">\(\alpha\)</span> are average patch intercepts, <span class="math inline">\(\beta\)</span> metapopulation-specific deviations from these intercepts, <span class="math inline">\(\gamma\)</span> temporal abundance fluctuations (not to be confused with <span class="math inline">\(\alpha\)</span>, <span class="math inline">\(\beta\)</span>, <span class="math inline">\(\gamma\)</span> variabilities), <span class="math inline">\(\boldsymbol{\Omega}\)</span> the relevant covariance matrices and <span class="math inline">\(\boldsymbol{R}\)</span> the correlation matrices.</p>
-<p>(you can see we are estimating a separate temporal variance-covariance matrix for each replicate <span class="math inline">\(j\)</span>. We will average everything in this end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results. Note that this also mean this is a model with observation-level random effects (see Harrison <span class="citation">(2014)</span>), so no further overdispersion to worry about) We can add a treatment effect to it (so <span class="math inline">\(\alpha_{[i]}\)</span> becomes <span class="math inline">\(\alpha_{[i]\textrm{TREATMENT}[j]}\)</span>), to estimate whether our treatments affect mean population size. We do not need to alter the temporal variance-covariance matrix if we decide to add a treatment effect. Indeed it’s already split by replicate metapopulation; if we want to know how it varies by treatment, we can just average our final replicate-level metrics at the end by treatment instead of averaging all the replicates together.</p>
+<p>You can see we are estimating a separate temporal variance-covariance matrix for each replicate <span class="math inline">\(i\)</span>. We will average everything in the end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results. Note that this also mean this is a model with observation-level random effects <span class="citation">(Harrison, 2014)</span>, so no further overdispersion to worry about.</p>
+<p>We can add a treatment effect to it (so <span class="math inline">\(\alpha_{[x,y]}\)</span> becomes <span class="math inline">\(\alpha_{[x,y]\textrm{TREATMENT}[i]}\)</span>), to estimate whether our treatments affect mean population size. We do not need to alter the temporal variance-covariance matrix if we decide to add a treatment effect. Indeed it’s already split by replicate metapopulation; if we want to know how it varies by treatment, we can just average our final replicate-level metrics at the end by treatment instead of averaging all the replicates together.</p>
 </div>
 <div id="b---implementation---formulas" class="section level2">
 <h2>2B - Implementation - formulas</h2>
 <p>This is implemented in R as follow. First, a bit to modify to set whether or not there is going to be a treatment effect:</p>
 <pre class="r"><code>which.trt &lt;- c(&quot;LENGTH&quot;, &quot;SHUFFLE&quot;) ## CHANGE as needed
 ### ^you say in which.trt what treatment you want, if you want an interaction, just put c(&quot;FACTOR1&quot;,&quot;FACTOR2&quot;)
-## if you want the model with everything pooled, put NA
+## if you want a model with everything pooled, which.trt &lt;- NA
 ## it converts it as a factor automatically
 
 shared.among.metapop.var &lt;- TRUE ## DO NOT CHANGE, here for completedness only
@@ -1748,7 +1752,7 @@ shared.among.metapop.var &lt;- TRUE ## DO NOT CHANGE, here for completedness onl
 ### if FALSE and which.trt!= NA, we estimate different metapopulation random effects for each treatment
 ### interesting in theory (do different treatments drift at the same rate?)
 ### but not enough replicates to do that here (in some cases only 3 replicates to estimate a correlation :( )</code></pre>
-<p>And then we select the right model formula based on this.</p>
+<p>And then the script selects the right model formula based on this.</p>
 <pre class="r"><code>if (sum(is.na(which.trt)) &gt; 0) { ## model formula if we assume no treatment effect whatsoever
 
   metapopformula &lt;- mvbf(
@@ -1804,17 +1808,17 @@ if (sum(is.na(which.trt)) == 0) { ## so what is the model formula if we want to 
     )
   }
 }</code></pre>
-<p>(note the ~0 + TREATMENT, rather than ~TREATMENT syntax in the fixed effects. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed, and be sure, all prior means have the same precision. See Schielzeth <span class="citation">(2010)</span> and McElreath <span class="citation">(2016)</span>.</p>
+<p>(note the <code>~0 + TREATMENT</code>, rather than <code>~TREATMENT</code> syntax in the fixed effects. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed, and be sure all prior means have the same precision. See Schielzeth <span class="citation">(2010)</span> and McElreath <span class="citation">(2020)</span>.</p>
 </div>
 <div id="c---implementation---choosing-priors" class="section level2">
 <h2>2C - Implementation - choosing priors</h2>
-<p>We then select our priors. The priors I propose here are weakly informative (sensu McElreath <span class="citation">(2016)</span>). For the fixed effects coefficients (corresponding to latent, ie on log scale, grand means of single patch population size), I based myself roughly on the population densities in de Roissart et al. (REF to add, for paper and dryad data) (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in de Roissart et al. (which would be something like <span class="math inline">\(Normal(1.8,0.9)\)</span>), both to have round numbers and to avoid giving too much weight to the information from that paper.</p>
+<p>We then select our priors. The priors I propose here are weakly informative <span class="citation">(sensu McElreath, 2020)</span>. For the fixed effects coefficients (corresponding to latent, i.e. on log scale, grand means of single patch population size), I based myself roughly on the entire distribution of population densities in De Roissart <em>et al.</em> <span class="citation">(2015, 2016)</span> (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in De Roissart <em>et al.</em> (which would be something like <span class="math inline">\(\textrm{Normal}(1.8,0.9)\)</span>), both to have round numbers and to avoid giving too much weight to the information from that paper.</p>
 <pre class="r"><code>if (sum(is.na(which.trt)) &gt; 0) {
   prior &lt;- c(
     set_prior(&quot;normal(2,1)&quot;, class = &quot;Intercept&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
     set_prior(&quot;normal(0,1)&quot;, class = &quot;sd&quot;, group = &quot;METAPOP_ID&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
     set_prior(&quot;normal(0,1)&quot;, class = &quot;sd&quot;, group=&quot;WEEK2&quot;, resp = c(&quot;P11&quot;, &quot;P12&quot;, &quot;P13&quot;, &quot;P21&quot;, &quot;P22&quot;, &quot;P23&quot;, &quot;P31&quot;, &quot;P32&quot;, &quot;P33&quot;)),
-    set_prior(&quot;lkj(2)&quot;, class = &quot;cor&quot;) # midly skeptical of very high correlations (positive or negative)
+    set_prior(&quot;lkj(2)&quot;, class = &quot;cor&quot;) # mildly skeptical of very high correlations (positive or negative)
   )
 }
 
@@ -1832,7 +1836,7 @@ if (sum(is.na(which.trt)) == 0) {
 <p>We can now fit the model based on the choices we made earlier</p>
 <pre class="r"><code>if(file.exists(here(&quot;R_output&quot;,&quot;model.Rdata&quot;)))
   # this if-else statement is avoid re-fitting a model if there is already one existing in R_output
-  # to override, re-run the model and re-save manually by selecting relevant code lines (or delete the Rdata object before relaunching this code chunk)
+  # to override, re-run the model and re-save manually by selecting only the relevant code lines (or delete the Rdata object before relaunching this code chunk)
   {
   load(here(&quot;R_output&quot;,&quot;model.Rdata&quot;))
   }else
@@ -1845,23 +1849,23 @@ mod &lt;- brm(metapopformula, data = data,
 
 save(list=&quot;mod&quot;, file=here(&quot;R_output&quot;,&quot;model.Rdata&quot;))
 }</code></pre>
-<p>Note that it can take some time to finish (around 1h per 2000 iterations for a 4-chain model in my laptop).</p>
-<p>If warnings about ESS (effective sample size) or Rhat, follow advice displayed and/or increase iteration/chains number until everything is satisfactory. Even if no more warnings, check that all parameters have ESS &gt; 1000. If not, adjust model control parameters/increase chain length</p>
-<pre class="r"><code>summary(mod) ## add posterior checks on ESS?</code></pre>
-<p>You also need to check that the model can reproduce the data well, through posterior predictive checks (here, given we have observation-level random effects, it should be OK)</p>
+<p>Note that it can take some time to finish (around 2000 iterations/h/core in my laptop).</p>
+<pre class="r"><code>summary(mod)  #look at Rhat and ESS both tail and bulk</code></pre>
+<p>You also need to check that the model can reproduce the data well, through posterior predictive checks <span class="citation">(Gabry, Simpson, Vehtari, Betancourt, &amp; Gelman, 2019)</span> (here, given we have observation-level random effects, it should be OK)</p>
 <pre class="r"><code>pp_check(mod, resp = &quot;P11&quot;, nsamples = 20)
-## can the model generate the observed data? (there are many ppcheck possibles, see the help)
+## can the model generate the observed data? (there are many ppcheck possibles, see the help of the bayesplot package)
 ## in a multivariate model, you need to specify the response (so here which patch)</code></pre>
 </div>
 </div>
 <div id="part-3---extracting-key-metrics-from-model-output" class="section level1">
 <h1>Part 3 - Extracting key metrics from model output</h1>
-<p>Once, we have fitted and chosen a model, it’s time to extract what we need from it. In the next code chunk, I’ve made a function that takes a brms model as input and give all metrics we need as output (it only works on one of the models that can be specified via the script above, of course)</p>
-<p>In some places in the function you will see 3-dimensional arrays called. This is going to be the typical structure of many parts of a multivariate model fitted by brms:</p>
+<p>Once, we have fitted and chosen a model, it’s time to extract what we need from it. In the next code chunk, I’ve made a function that takes a <code>brms</code> model as input and give all metrics we need as output (it only works correctly on one of the models that can be specified via the script above, of course).</p>
+<p>The function is <em>far</em> from optimized in terms of time or memory use (and I would probably have a look if I had time, e.g. move from <code>for</code> loops to <code>purr</code>), but it works so <shrug>.</p>
+<p>In some places in the function you will see 3-dimensional arrays called. This is going to be the typical structure of many parts of a multivariate model fitted by <code>brms</code>:</p>
 <p>model_part[X,Y,Z], X = posterior sample index Y = data observation row Z = response variable (here, patches)</p>
 <pre class="r"><code>### slow !!!!! need a rewrite to optimise
 metrics_estimate &lt;- function(mod = mod) {
-  tab_results &lt;- list(NA)
+  data_results &lt;- list(NA)
 
   METAPOPlevels &lt;- levels(factor(data$METAPOP_ID))
   ###an object with each metapop name so we can loop and call their names as needed
@@ -1958,17 +1962,15 @@ metrics_estimate &lt;- function(mod = mod) {
   }
 
   ### ...and then we bind all the tables in the list together
-  tab_results &lt;- bind_rows(tab_results) %&gt;% #I need to find a way not to have the binding character and factor warning (it&#39;s just a warning)
+  data_results &lt;- bind_rows(data_results) %&gt;% #I need to find a way not to have the binding character and factor warning (it&#39;s just a warning)
     group_by(TREATMENT, which_model, .iteration) %&gt;%
     summarize_if(is.numeric, mean) %&gt;%
     ungroup()
   ## the very last line above is where we finally group metrics calculated at the replicate level
   ## and average them through the whole dataset/by treatment
 
-  return(tab_results)
-}
-
-#should probably have look at using functional programming here; maybe later</code></pre>
+  return(data_results)
+}</code></pre>
 <p>Once the function is in the environment, to get what we want, we “just” have to do this:</p>
 <pre class="r"><code>if(file.exists(here(&quot;R_output&quot;,&quot;tab_results.Rdata&quot;)))
   {
@@ -1981,35 +1983,287 @@ tab_results &lt;- metrics_estimate(mod = mod) ## change model name as appropriat
 save(list=&quot;tab_results&quot;, file=here(&quot;R_output&quot;,&quot;tab_results.Rdata&quot;))
 }</code></pre>
 </div>
-<div id="part-4--summarizing-the-output-and-inference" class="section level1">
-<h1>Part 4- Summarizing the output and inference</h1>
-<p>Here are some examples of ways to visualize and do comparisons on the output. Please look the help for the different functions, and the tidybayes package help for other ideas and suggestions.</p>
-<pre class="r"><code>ggplot(tab_results) + geom_density(aes(metapopNmean, col = TREATMENT))
+<div id="part-4--figures" class="section level1">
+<h1>Part 4- Figures</h1>
+<p>Before doing the figures, we need to recreate the <code>SHUFFLE</code> and <code>LENGTH</code> columns. We also need to create color palettes that’ll be used throughout:</p>
+<pre class="r"><code>tab_results &lt;-tab_results %&gt;% 
+  mutate(
+    SHUFFLE=str_extract(TREATMENT,&quot;[:upper:]+&quot;),
+    LENGTH=str_extract(TREATMENT,&quot;[:digit:]+&quot;) %&gt;% as.numeric()
+         )
+
+paletteLENGTH &lt;- c(&quot;#D55E00&quot;, &quot;#E69F00&quot;, &quot;#F0E442&quot;) #for figures 2 to 4
+paletteLOCAL &lt;-  c(&quot;#e66101&quot;, &quot;#fdb863&quot;, &quot;#5e3c99&quot;) #for figure 5</code></pre>
+<div id="figure-2" class="section level2">
+<h2>Figure 2</h2>
+<p>Figs 2 to 4 are each made of 4 panels, one per key variable (metapopulation size, <span class="math inline">\(\alpha,\beta,\gamma\)</span> variabilities). We create each panel separately then use the <code>patchwork</code> package to merge them and to apply styles common to all panels.</p>
+<p>Figure 2 contains posteriors for the non-shuffled (control) metapopulations:</p>
+<pre class="r"><code>tab2 &lt;- tab_results %&gt;% 
+  filter(SHUFFLE == &quot;NO&quot;)
+
+p2a &lt;- tab2 %&gt;% 
+  ggplot()+
+  stat_halfeye(aes(x=metapopNmean,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize=&quot;xy&quot;) +
+  labs(x = &quot;Metapopulation mean density&quot;)+
+  scale_y_discrete(&quot;Length (cm)&quot;)
+  
+p2b &lt;- tab2 %&gt;% 
+  ggplot()+
+  stat_halfeye(data= . %&gt;% filter(alpha&lt;=20), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=alpha,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize=&quot;xy&quot;) +
+  stat_pointinterval(aes(x=alpha,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  scale_x_continuous(&quot;Alpha variability&quot;)+
+  scale_y_discrete(&quot;&quot;)
+
+p2c &lt;- tab2 %&gt;% 
+  ggplot()+
+  stat_halfeye(aes(x=beta1,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize=&quot;xy&quot;)+
+  scale_x_continuous(&quot;Beta variability&quot;)+
+  scale_y_discrete(&quot;Length (cm)&quot;)
+
+p2d &lt;- tab2 %&gt;% 
+  ggplot()+
+  stat_halfeye(data=. %&gt;% filter(gamma&lt;=15), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=gamma,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize=&quot;xy&quot;) +
+  stat_pointinterval(aes(x=gamma,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  scale_x_continuous(&quot;Gamma variability&quot;) +
+  scale_y_discrete(&quot;&quot;)
+
+(p2a | p2b)/ (p2c | p2d) + plot_annotation(tag_levels = &#39;A&#39;) &amp; 
+  scale_fill_manual(values = paletteLENGTH) &amp;
+  theme_bw() &amp; 
+  theme(legend.position = &quot;none&quot;, text=element_text(size = 20))</code></pre>
+</div>
+<div id="figure-3" class="section level2">
+<h2>Figure 3</h2>
+<p>Figure 3 contains posteriors for the shuffled metapopulations:</p>
+<pre class="r"><code>tab3 &lt;- tab_results %&gt;% 
+  filter(SHUFFLE == &quot;R&quot;)
+
+p3a &lt;- tab3 %&gt;% 
+  ggplot()+
+  stat_halfeye(aes(x=metapopNmean,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize=&quot;xy&quot;) +
+  scale_x_continuous(&quot;Metapopulation mean density&quot;)+
+  scale_y_discrete(&quot;Length (cm)&quot;)
+  
+p3b &lt;- tab3 %&gt;% 
+ ggplot()+
+  stat_halfeye(data=. %&gt;% filter(alpha&lt;=20), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=alpha,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize=&quot;xy&quot;) +
+  stat_pointinterval(aes(x=alpha,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  scale_x_continuous(&quot;Alpha variability&quot;)+
+  scale_y_discrete(&quot;&quot;)
+
+p3c &lt;- tab3 %&gt;% 
+  ggplot()+
+  stat_halfeye(aes(x=beta1,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize=&quot;xy&quot;)+
+  scale_x_continuous(&quot;Beta variability&quot;)+
+  scale_y_discrete(&quot;Length (cm)&quot;)
+
+p3d &lt;- tab3 %&gt;% 
+  ggplot()+
+  stat_halfeye(data= . %&gt;% filter(gamma&lt;=15), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=gamma,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize=&quot;xy&quot;) +
+  stat_pointinterval(aes(x=gamma,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  scale_x_continuous(&quot;Gamma variability&quot;) +
+  scale_y_discrete(&quot;&quot;)
+
+(p3a | p3b)/ (p3c | p3d) + plot_annotation(tag_levels = &#39;A&#39;) &amp; 
+  scale_fill_manual(values = paletteLENGTH) &amp; 
+  theme_bw() &amp; 
+  theme(legend.position = &quot;none&quot;, text=element_text(size = 20))</code></pre>
+</div>
+<div id="figure-4" class="section level2">
+<h2>Figure 4</h2>
+<p>Figure 4 contains posteriors of the comparison between shuffled and non shuffled treatments. There are two options here, either use the difference between treatments (chunk <code>fig4</code>), or the ratio (<code>4bis</code>) between treatments. The ratio may be more appropriate since we are dealing with multiplicative processes:</p>
+<div id="figure-4-additive-comparison" class="section level3">
+<h3>Figure 4: additive comparison</h3>
+<pre class="r"><code>p4a &lt;- tab_results %&gt;% 
+  group_by(LENGTH) %&gt;% 
+  compare_levels(variable = &quot;metapopNmean&quot;, by = SHUFFLE) %&gt;%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = metapopNmean, fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize=&quot;xy&quot;) +
+  geom_vline(xintercept = 0) + 
+  scale_x_continuous(&quot;Metapopulation mean density&quot;) +
+  scale_y_discrete(&quot;Length (cm)&quot;)
+
+p4b &lt;- tab_results %&gt;% 
+  group_by(LENGTH) %&gt;% 
+  compare_levels(variable = &quot;alpha&quot;, by = SHUFFLE) %&gt;%
+  ggplot() +
+  stat_halfeye(data=. %&gt;% filter(abs(alpha)&lt;=15), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=alpha,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize=&quot;xy&quot;) +
+  stat_pointinterval(aes(x=alpha,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  geom_vline(xintercept = 0) + 
+  scale_x_continuous(&quot;Alpha variability&quot;) +
+  scale_y_discrete(&quot;&quot;)
+
+p4c &lt;- tab_results %&gt;% 
+  group_by(LENGTH) %&gt;% 
+  compare_levels(variable = &quot;beta1&quot;, by = SHUFFLE) %&gt;%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = beta1,fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize=&quot;xy&quot;) +
+  geom_vline(xintercept = 0) +
+  scale_x_continuous(&quot;Beta variability&quot;) +
+  scale_y_discrete(&quot;Length (cm)&quot;)
+
+p4d &lt;- tab_results %&gt;% 
+  group_by(LENGTH) %&gt;% 
+  compare_levels(variable = &quot;gamma&quot;, by = SHUFFLE) %&gt;%
+  ggplot() +
+  stat_halfeye(data=. %&gt;% filter(abs(gamma)&lt;=5), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=gamma,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize=&quot;xy&quot;) +
+  stat_pointinterval(aes(x=gamma,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  geom_vline(xintercept = 0) +
+  scale_x_continuous(&quot;Gamma variability&quot;) +
+  scale_y_discrete(&quot;&quot;)
 
 
+(p4a | p4b)/ (p4c | p4d) + plot_annotation(title = &quot;Comparisons, shuffled - control&quot;, tag_levels = &#39;A&#39;) &amp; 
+  theme_bw() &amp; 
+  scale_fill_manual(values = paletteLENGTH) &amp; 
+  theme(legend.position = &quot;none&quot;, text=element_text(size = 20))</code></pre>
+</div>
+<div id="figure-4bis-multiplicative-comparison" class="section level3">
+<h3>Figure 4bis: multiplicative comparison</h3>
+<pre class="r"><code>p4a &lt;- tab_results %&gt;% 
+  group_by(LENGTH) %&gt;% 
+  compare_levels(variable = &quot;metapopNmean&quot;, by = SHUFFLE, fun= `/`) %&gt;%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = metapopNmean, fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize=&quot;xy&quot;) +
+  geom_vline(xintercept = 1) + 
+  scale_x_continuous(&quot;Metapopulation mean density&quot;) +
+  scale_y_discrete(&quot;Length (cm)&quot;)
+
+p4b &lt;- tab_results %&gt;% 
+  group_by(LENGTH) %&gt;% 
+  compare_levels(variable = &quot;alpha&quot;, by = SHUFFLE, fun= `/`) %&gt;%
+  ggplot() +
+  stat_halfeye(data=. %&gt;% filter(alpha&lt;=10), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=alpha,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize=&quot;xy&quot;) +
+  stat_pointinterval(aes(x=alpha,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  geom_vline(xintercept = 1) + 
+  scale_x_continuous(&quot;Alpha variability&quot;) +
+  scale_y_discrete(&quot;&quot;)
+
+p4c &lt;- tab_results %&gt;% 
+  group_by(LENGTH) %&gt;% 
+  compare_levels(variable = &quot;beta1&quot;, by = SHUFFLE, fun= `/`) %&gt;%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = beta1,fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize=&quot;xy&quot;) +
+  geom_vline(xintercept = 1) +
+  scale_x_continuous(&quot;Beta variability&quot;) +
+  scale_y_discrete(&quot;Length (cm)&quot;)
+
+p4d &lt;- tab_results %&gt;% 
+  group_by(LENGTH) %&gt;% 
+  compare_levels(variable = &quot;gamma&quot;, by = SHUFFLE, fun= `/`) %&gt;%
+  ggplot() +
+  stat_halfeye(data=. %&gt;% filter(gamma&lt;=5), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=gamma,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize=&quot;xy&quot;) +
+  stat_pointinterval(aes(x=gamma,y=factor(LENGTH)),
+               point_interval = median_hdi)+
+  geom_vline(xintercept = 1) +
+  scale_x_continuous(&quot;Gamma variability&quot;) +
+  scale_y_discrete(&quot;&quot;)
+
+
+(p4a | p4b)/ (p4c | p4d) + plot_annotation(title = &quot;Comparisons, ratio shuffled / control&quot;, tag_levels = &#39;A&#39;) &amp; 
+  theme_bw() &amp; 
+  scale_fill_manual(values = paletteLENGTH) &amp; 
+  theme(legend.position = &quot;none&quot;, text=element_text(size = 20))</code></pre>
+</div>
+</div>
+<div id="figure-5" class="section level2">
+<h2>Figure 5</h2>
+<p>Figure 5 shows what happens at the local patch scale, depending on the local level of patch connectedness:</p>
+<pre class="r"><code>tab_results %&gt;% 
+  select(Nmean_corners,Nmean_center,Nmean_sides, LENGTH, SHUFFLE,.iteration) %&gt;%
+  pivot_longer(cols=c(Nmean_corners,Nmean_center,Nmean_sides),
+               values_to=&quot;N_local&quot;) %&gt;% 
+  mutate(name = fct_recode(factor(name), corner=&quot;Nmean_corners&quot;,edge=&quot;Nmean_sides&quot;,center=&quot;Nmean_center&quot;)) %&gt;% 
+  mutate(`local connectedness` = fct_relevel(name,&quot;corner&quot;,after=Inf)) %&gt;% 
+  mutate(SHUFFLE = fct_recode(factor(SHUFFLE),control=&quot;NO&quot;,randomized=&quot;R&quot;)) %&gt;% 
+  ggplot()+
+  stat_halfeye(aes(x=N_local,y=factor(LENGTH),fill=`local connectedness`, alpha=0.5))+
+  scale_x_continuous(&quot;mean local population density&quot;)+
+  scale_fill_manual(values=paletteLOCAL)+
+  scale_y_discrete(&quot;Length (cm)&quot;)+
+  scale_alpha(guide=&quot;none&quot;)+
+  facet_grid(rows=vars(SHUFFLE))+
+  theme_bw() &amp; 
+  theme(legend.position = &quot;bottom&quot;, text=element_text(size = 20))</code></pre>
+</div>
+</div>
+<div id="more-on-inferences" class="section level1">
+<h1>More on inferences</h1>
+<p>The function <code>compare_levels()</code> used to make Figure 4 can be used to obtain actual numbers and intervals for many comparisons. Only one example displayed here for simplicity, see the help of both functions for more details, and explore:</p>
+<pre class="r"><code>## an example
 ## calculating differences between treatment using compare_levels
 compare_levels(tab_results, variable = &quot;metapopNmean&quot;, by = TREATMENT) %&gt;%
-  ggplot() +
-  geom_halfeyeh(aes(y = TREATMENT, x = metapopNmean)) +
-  geom_vline(xintercept = 0)</code></pre>
+  mean_hdi()</code></pre>
 </div>
 <div id="references" class="section level1 unnumbered">
 <h1 class="unnumbered">References</h1>
 <div id="refs" class="references hanging-indent">
-<div id="ref-harrison_using_2014">
+<div id="ref-burknerBrmsPackageBayesian2017">
+<p>Bürkner, P.-C. (2017). Brms: An R package for bayesian multilevel models using Stan. <em>Journal of Statistical Software</em>, <em>80</em>(1), 1–28. doi: <a href="https://doi.org/10.18637/jss.v080.i01">10.18637/jss.v080.i01</a></p>
+</div>
+<div id="ref-carpenterStanProbabilisticProgramming2017">
+<p>Carpenter, B., Gelman, A., Hoffman, M. D., Lee, D., Goodrich, B., Betancourt, M., … Riddell, A. (2017). Stan: A probabilistic programming language. <em>Journal of Statistical Software</em>, <em>76</em>(1), 1–32. doi: <a href="https://doi.org/10.18637/jss.v076.i01">10.18637/jss.v076.i01</a></p>
+</div>
+<div id="ref-deroissartSpatialSpatiotemporalVariation2015">
+<p>De Roissart, A., Wang, S., &amp; Bonte, D. (2015). Spatial and spatiotemporal variation in metapopulation structure affects population dynamics in a passively dispersing arthropod. <em>Journal of Animal Ecology</em>, <em>84</em>(6), 1565–1574. doi: <a href="https://doi.org/10.1111/1365-2656.12400">10.1111/1365-2656.12400</a></p>
+</div>
+<div id="ref-deroissartDataSpatialSpatiotemporal2016">
+<p>De Roissart, A., Wang, S., &amp; Bonte, D. (2016). <em>Data from: Spatial and spatiotemporal variation in metapopulation structure affects population dynamics in a passively dispersing arthropod</em>. doi: <a href="https://doi.org/10.5061/DRYAD.18R5F">10.5061/DRYAD.18R5F</a></p>
+</div>
+<div id="ref-gabryVisualizationBayesianWorkflow2019">
+<p>Gabry, J., Simpson, D., Vehtari, A., Betancourt, M., &amp; Gelman, A. (2019). Visualization in Bayesian workflow. <em>Journal of the Royal Statistical Society: Series A (Statistics in Society)</em>, <em>182</em>(2), 389–402. doi: <a href="https://doi.org/10.1111/rssa.12378">10.1111/rssa.12378</a></p>
+</div>
+<div id="ref-harrisonUsingObservationlevelRandom2014">
 <p>Harrison, X. A. (2014). Using observation-level random effects to model overdispersion in count data in ecology and evolution. <em>PeerJ</em>, <em>2</em>, e616. doi: <a href="https://doi.org/10.7717/peerj.616">10.7717/peerj.616</a></p>
 </div>
-<div id="ref-mcelreath_statistical_2016">
-<p>McElreath, R. (2016). <em>Statistical Rethinking: A Bayesian Course with Examples in R and Stan</em> (1st ed.). Boca Raton: Chapman; Hall/CRC.</p>
+<div id="ref-mcelreathStatisticalRethinkingBayesian2020">
+<p>McElreath, R. (2020). <em>Statistical Rethinking: A Bayesian Course with Examples in R and Stan</em> (2nd edition). Boca Raton: Chapman and Hall/CRC.</p>
 </div>
-<div id="ref-schielzeth_simple_2010">
+<div id="ref-schielzethSimpleMeansImprove2010">
 <p>Schielzeth, H. (2010). Simple means to improve the interpretability of regression coefficients. <em>Methods in Ecology and Evolution</em>, <em>1</em>(2), 103–113. doi: <a href="https://doi.org/10.1111/j.2041-210X.2010.00012.x">10.1111/j.2041-210X.2010.00012.x</a></p>
 </div>
-<div id="ref-villemereuil_general_2016">
-<p>Villemereuil, P. de, Schielzeth, H., Nakagawa, S., &amp; Morrissey, M. (2016). General Methods for Evolutionary Quantitative Genetic Inference from Generalized Mixed Models. <em>Genetics</em>, <em>204</em>(3), 1281–1294. doi: <a href="https://doi.org/10.1534/genetics.115.186536">10.1534/genetics.115.186536</a></p>
+<div id="ref-standevelopmentteamRStanInterfaceStan2018">
+<p>Stan Development Team. (2018). <em>RStan: The R interface to Stan</em>.</p>
 </div>
-<div id="ref-wang_ecosystem_2014">
-<p>Wang, S., &amp; Loreau, M. (2014). Ecosystem stability in space: Α, β and γ variability. <em>Ecology Letters</em>, <em>17</em>(8), 891–901. doi: <a href="https://doi.org/10.1111/ele.12292">10.1111/ele.12292</a></p>
+<div id="ref-villemereuilGeneralMethodsEvolutionary2016">
+<p>Villemereuil, P. de, Schielzeth, H., Nakagawa, S., &amp; Morrissey, M. (2016). General methods for evolutionary quantitative genetic inference from Generalized Mixed Models. <em>Genetics</em>, <em>204</em>(3), 1281–1294. doi: <a href="https://doi.org/10.1534/genetics.115.186536">10.1534/genetics.115.186536</a></p>
+</div>
+<div id="ref-wangEcosystemStabilitySpace2014">
+<p>Wang, S., &amp; Loreau, M. (2014). Ecosystem stability in space: <span class="math inline">\(\alpha\)</span>, <span class="math inline">\(\beta\)</span> and <span class="math inline">\(\gamma\)</span> variability. <em>Ecology Letters</em>, <em>17</em>(8), 891–901. doi: <a href="https://doi.org/10.1111/ele.12292">10.1111/ele.12292</a></p>
+</div>
+<div id="ref-wickhamWelcomeTidyverse2019">
+<p>Wickham, H., Averick, M., Bryan, J., Chang, W., McGowan, L., François, R., … Yutani, H. (2019). Welcome to the Tidyverse. <em>Journal of Open Source Software</em>, <em>4</em>(43), 1686. doi: <a href="https://doi.org/10.21105/joss.01686">10.21105/joss.01686</a></p>
 </div>
 </div>
 </div>
