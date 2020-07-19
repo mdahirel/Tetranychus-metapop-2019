@@ -1,6 +1,6 @@
 # Metapopulation dynamics in *Tetranychus urticae*
 
-
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3951429.svg)](https://doi.org/10.5281/zenodo.3951429)
 
 This repo contains data and code needed to re-do the analyses and figures in our manuscript:
 
