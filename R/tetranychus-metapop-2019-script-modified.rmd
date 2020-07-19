@@ -1,0 +1,1145 @@
+---
+title: Analysis of replicated Tetranychus metapopulation experiment - abundance and
+  temporal variability
+author: "Maxime Dahirel"
+date: "08/08/2019"
+output:
+  html_document: null
+  word_document: default
+  pdf_document: default
+bibliography: tetranychus-metapop-2019-refs.bib
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+
+This script relies heavily on de Villemereuil et al. [-@villemereuil_general_2016] (for converting latent-scale variance-covariance matrices to observed scale) and Wang and Loreau [-@wang_ecosystem_2014] (for the principle and formula of alpha, beta, gamma variability in metapops). Everything below assumes the user has read these two papers.
+
+# Part 1 : Preparation
+
+This script assumes the "tetranychus-metapop-2019-dataset.csv" dataset is loaded under the name data, using e.g. something like this:
+
+```{r data_load, message=FALSE}
+library(readr)
+data <- read_delim("tetranychus-metapop-2019-dataset.csv",
+  ";",
+  quote = "\\\"", escape_double = FALSE,
+  trim_ws = TRUE
+)
+```
+
+The variables in data are as follow:
+
+|Variable name| Description|
+|:------|:---------|
+|METAPOP_ID| unique ID for each replicate metapopulation|
+|LENGTH| length of bridges between patches in the metapopulation (4,8, or 16 cm)|
+|SHUFFLE| within-metapopulation reshuffling treatment. NO: control, no reshuffling, R: reshuffling|
+|REPLICATE|replicate metapopulation number within a treatment set. REPLICATE, SHUFFLE and LENGTH combine to give METAPOP_ID|
+|PATCH|Patch location in the 3 by 3 metapopulation (written as row.column) |
+|WEEK|weeks since the start of data collection (first week coded as 1)|
+|AFEMA|number of adult females present on patch|
+
+
+## 1A - packages
+
+First, we’re going to load all the packages we need. This includes the tidyverse packages (http://www.tidyverse.org), for data wrangling at the beginning and summarising/plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results.
+This script uses the Stan language (Carpenter et al [-@carpenter_stan:_2017] Stan Development Team [-@stan_development_team_rstan:_2018])for model fitting.  The RStan package containing Stan has a non-standard installation process, please check online: https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started . The brms package (Bürkner [-@burkner_brms:_2017]) allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The QGglmm package by de Villemereuil [-@villemereuil_general_2016] is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.
+
+```{r packages, message=FALSE}
+library(tidyverse)
+
+library(rstan) ## Stan
+library(brms) ## the interface we are using
+
+library(coda) ## post-processing packages
+library(bayesplot)
+library(tidybayes)
+library(matrixStats)
+
+library(QGglmm) ## this package is needed to convert variance-covariance matrices from latent to data scale
+```
+```{r multiplot, message=FALSE}
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+Then we’re going to set some Stan options, and create variables to set some others later. These can be adjusted depending on models. More (Nchains)/longer (Niter) chains than the default can be useful to ensure convergence.  mc.cores tells R how many cores Stan can use simultaneously. You can fit as many chains simultaneously as there are cores available. If Nchains > mc.cores, they will simply be fitted sequentially. The setup below uses all the chains; this can make it difficult to use a laptop for other tasks while model is fitting.
+
+```{r settings}
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores()) ## options to use all parallel cores during model fitting (1 chain per core)
+## if this slows down too much, change
+Nchains <- 4
+Nwarmup <- 10000
+Niter <- Nwarmup + 2000
+## some default seetings, to be adjusted if not enough for model convergence
+```
+
+## 1B – data wrangling
+
+In the raw dataset, data are stored so that there is one column for all population sizes, and a column saying which patch it belongs to. To fit our multivariate model, we need one column per patch position:
+
+```{r data_reshape}
+data$PATCH2 <- paste("P", data$PATCH, sep = "")
+data$PATCH2 <- str_remove(data$PATCH2, "[.]")
+### the two lines above make patches names (a) usable as column names (letter as 1st character)
+### and consistent with brms standards on variable names (best to avoid dots and underscore,
+### as some functions will remove them for output names and then matching input and output becomes harder
+
+Npatches <- length(unique(data$PATCH2)) ### counting how many patches there are
+
+tab <- data %>%
+  select(-c(PATCH)) %>%
+  spread(key = PATCH2, value = AFEMA) %>%
+  drop_na() %>%
+  mutate(WEEK2 = paste(WEEK, METAPOP_ID))
+```
+
+The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its full state at one time point). Note that we also removed rows that contained NAs. With a normally distributed variable we could have imputed them in-model (and thus avoid throwing an entire row of 9 patches for only one NA). This is not possible (yet?) for count data. It’s OK, only 3 rows are discarded out of ~550.
+The WEEK2 variable is useful to fit separate random effects per replicate (this is because in brms, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation)
+
+## 1-C Functions for alpha, beta, gamma variability (Wang and Loreau 2014)
+
+One of the aims of this script is estimate the alpha, beta and gamma variability metrics proposed by Wang and Loreau [-@wang_ecosystem_2014], while accounting for among metapopulation-variability. I’ve written short functions that calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
+
+```{r wang_loreau}
+
+alpha_wang_loreau <- function(varcorr, means) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop("Error(not a vector): means should be a vector of numeric values (abundances)")
+    if(!is.numeric(means)) stop("Error(not numeric): means should be a vector of numeric values (abundances)")
+    if(length(dim(varcorr))>2) stop("Error: varcorr matrix should be a 2-dimensional matrix")
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop("Error: varcorr matrix should be a square matrix")
+    if(dim(varcorr)[1] != length(means)) stop("Error: varcorr matrix and means should have same dimensions")
+  
+  CV_L = sum(sqrt(diag(varcorr))) / sum(means)
+  return(CV_L^2)
+}
+
+gamma_wang_loreau <- function(varcorr, means) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop("Error(not a vector): means should be a vector of numeric values (abundances)")
+    if(!is.numeric(means)) stop("Error(not numeric): means should be a vector of numeric values (abundances)")
+    if(length(dim(varcorr))>2) stop("Error: varcorr matrix should be a 2-dimensional matrix")
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop("Error: varcorr matrix should be a square matrix")
+    if(dim(varcorr)[1] != length(means)) stop("Error: varcorr matrix and means should have same dimensions")
+  
+  CV_M = sqrt(sum(varcorr)) / sum(means)
+  return(CV_M^2)
+}
+
+# no function for beta 1, it's simply 1/phi or alpha/gamma
+# I wrote the beta 2 and the phi function for completedness, we don't need them
+# because both betas can be defined through alpha and gamma
+# beta 1: see above, beta2 = alpha - gamma
+
+phi_wang_loreau <- function(varcorr) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+  if(length(dim(varcorr))>2) stop("Error: varcorr matrix should be a 2-dimensional matrix")
+  if(dim(varcorr)[1] != dim(varcorr)[2]) stop("Error: varcorr matrix should be a square matrix")
+    
+  return(sum(varcorr) / (sum(sqrt(diag(varcorr))))^2)
+}
+
+beta2_wang_loreau <- function(varcorr, means) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop("Error(not a vector): means should be a vector of numeric values (abundances)")
+    if(!is.numeric(means)) stop("Error(not numeric): means should be a vector of numeric values (abundances)")
+    if(length(dim(varcorr))>2) stop("Error: varcorr matrix should be a 2-dimensional matrix")
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop("Error: varcorr matrix should be a square matrix")
+    if(dim(varcorr)[1] != length(means)) stop("Error: varcorr matrix and means should have same dimensions")
+  
+  sqrt_w_bar <- sum(sqrt(diag(varcorr))) / length(means)
+  return((sqrt_w_bar^2 - (sum(varcorr)) / (length(means)^2)) / mean(means)^2)
+}
+```
+
+# Part 2 - Fitting the model(s)
+
+## 2A - Model description
+
+We fit a multivariate generalized linear mixed/multilevel model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance. This is this second effect we are most interested in here.
+
+The basic formula for the model for the number of females at patch i, in metapopulation j, at time k:
+
+[latex formula in progress, not complete and not sure if right]
+
+$$\begin{equation*}
+N_{[i,j,k]} \sim  {\sf Poisson}(\lambda_{[i,j,k]}) \\
+\log(\lambda_{[i,j,k]}) = \alpha_{[i]} + \beta_{[i,j]} + \gamma_{[i,j,k]} \\
+
+\mathbf{}\left[\begin{matrix}
+\beta_{[1,j]} \\ ... \\ \beta_{[i,j]} 
+\end{matrix}\right] \sim {\sf MVNormal}\left(
+
+\mathbf{}
+\left[\begin{matrix}
+0 \\ ... \\ 0 
+\end{matrix}\right] ,
+S_{METAPOP}\right)\\
+
+\left[\begin{matrix}
+\gamma_{[1,j,k]} \\ ... \\ \gamma_{[i,j,k]} 
+\end{matrix}\right] \sim {\sf MVNormal}\left(
+
+\left[\begin{matrix}
+0 \\ ... \\ 0 
+\end{matrix}\right] ,
+S_{TIME}\right)\\
+
+S_{METAPOP} = 
+\left(\begin{matrix}
+\sigma_{M[1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[i]} 
+\end{matrix}\right) 
+R_{METAPOP}
+\left(\begin{matrix}
+\sigma_{M[1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[i]} 
+\end{matrix}\right)    \\
+
+S_{TIME[j]} = 
+\left(\begin{matrix}
+\sigma_{T[1,j]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{T[i,j]} 
+\end{matrix}\right)  
+R_{TIME}
+\left(\begin{matrix}
+\sigma_{T[1,j]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{T[i,j]} 
+\end{matrix}\right)    \\
+
+\end{equation*}$$
+
+where $\alpha$ are average patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\gamma$ temporal abundance fluctuations, S the relevant covariance matrices and R the correlation matrices.
+
+(you can see we are estimating a separate temporal variance-covariance matrix for each replicate j. We will average everything in this end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results. Note that this also mean this is a model with observation-level random effects (see Harrison [-@harrison_using_2014]), so this means no further overdispersion to worry about)
+We can add a treatment effect to it, in the fixed effects, to estimate whether our treatments affect mean population size.  We do not need to alter the temporal variance-covariance matrix if we decide to add a treatment effect. Indeed it’s already split by replicate metapopulation; if we want to know how it varies by treatment, we will average our final replicate-level metrics at the end by treatment instead of averaging all the replicates together.
+
+## 2B - Implementation - formulas
+
+This is implemented in R as follow. First, a bit to modify to set whether or not there is going to be a treatment effect:
+
+```{r treatment_select}
+which.trt <- c("LENGTH", "SHUFFLE") ## CHANGE as needed
+### ^you say in which.trt what treatment you want, if you want an interaction, just put c("FACTOR1","FACTOR2")
+## if you want the model with everything pooled, put NA
+## it converts it as a factor automatically
+
+shared.among.metapop.var <- TRUE ## DO NOT CHANGE, here for completedness only
+### ^ if TRUE (default), means the metapopulation random effect is common to all replicates
+### if FALSE and which.trt!= NA, we estimate different metapopulation random effects for each treatment
+### interesting in theory (do different treatment drift at the same rate?)
+### but not enough replicates to do that (in some cases only 3 replicates to estimate a correlation :( )
+```
+
+And then we select the right model formula based on this.
+
+```{r formula_build}
+if (is.na(which.trt) == TRUE) { ## model formula if we assume no treatment effect whatsoever
+
+  metapopformula <- mvbf(
+    bf(P11 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P12 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P13 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P21 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P22 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P23 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P31 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P32 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+    bf(P33 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson)
+  )
+}
+
+## see vignette("brms_multivariate") for help on the syntax above, in particular the (1|P|random effect) syntax
+## see ?gr() for help too if needed
+
+if (is.na(which.trt) == FALSE) { ## so what is the model formula if we want to test the effect of treatment?
+
+  if (length(which.trt) == 1) {
+    tab$TREATMENT <- factor(pull(tab[, which.trt]))
+  }
+  if (length(which.trt) == 2) {
+    tab$TREATMENT <- interaction(pull(tab[, which.trt[1]]), pull(tab[, which.trt[2]]))
+  }
+
+  if (shared.among.metapop.var == TRUE) {
+    metapopformula <- mvbf(
+      bf(P11 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P12 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P13 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P21 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P22 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P23 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P31 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P32 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P33 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson)
+    )
+  }
+
+  if (shared.among.metapop.var == FALSE) {
+    metapopformula <- mvbf(
+      bf(P11 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P12 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P13 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P21 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P22 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P23 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P31 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P32 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      bf(P33 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson)
+    )
+  }
+}
+```
+
+(note the ~0 + TREATMENT, rather than ~TREATMENT syntax in the fixed effects. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed, and be sure, all prior means have the same precision. See Schielzeth [-@schielzeth_simple_2010] and McElreath [-@mcelreath_statistical_2016].
+
+## 2C - Implementation - choosing priors
+
+We then select our prior. The priors I propose here are weakly informative (see McElreath [-@mcelreath_statistical_2016]). For the fixed effects coefficients (corresponding to latent, ie on log scale, grand means of single patch population size), I based myself roughly on the population densities in van Petegem et al [-@van_petegem_kin_2018] and Bitume et al [-@bitume_dispersal_2014] (multiplied to account for our patch size: 5 by 5 cm)
+
+```{r prior_setting}
+
+if (is.na(which.trt) == TRUE) {
+  prior <- c(
+    set_prior("normal(3,1.5)", class = "Intercept", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(0,1)", class = "sd", group="WEEK2", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("lkj(2)", class = "cor") # very skeptical of very high correlations (positive or negative)
+  )
+}
+
+if (is.na(which.trt) == FALSE) {
+  prior <- c(
+    set_prior("normal(3,1.5)", class = "b", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(0,1)", class = "sd", group="WEEK2", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("lkj(2)", class = "cor") # midly skeptical of very high correlations (positive or negative)
+  )
+}
+```
+
+## 2D - Implementation - fitting
+
+We can now fit the model based on the choices we made earlier
+
+```{r model_fitting}
+mod <- brm(metapopformula, data = tab, 
+           iter = Niter, warmup = Nwarmup, chains = Nchains, 
+           prior = prior, seed = 42,
+           control = list(adapt_delta = 0.9))
+```
+
+Note that it can take some time to finish (around 1h per 2000 iterations for a 4-chain model in my laptop).
+(also, of course you can change the model name if you fit several models to compare in the same session)
+
+If warnings about ESS (effective sample size) or Rhat, follow advice displayed and/or increase iteration/chains number until everything is satisfactory. Even if no more warnings, check that all parameters have ESS > 1000. If not, adjust model control parameters/increase chain length
+
+```{r model_summary}
+summary(mod) ## add posterior checks on ESS?
+```
+
+You also need to check that the model can reproduce the data well, through posterior predictive checks
+(here, given we have observation-level random effects, it should be OK)
+
+```{r model_ppchecks}
+patches <- c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")
+
+for(i in 1:length(patches)){
+print(pp_check(mod,resp = patches[i], nsamples = 20,
+               type = "dens_overlay"))
+}
+rm(i)
+## can the model generate the observed data? (there are many ppcheck possibles, see the help)
+## in a multivariate model, you need to specify the response (so here which patch)
+```
+
+## 2D - Model comparison
+
+add stuff about WAIC/LOO/K-Fold, and loo_compare()
+
+# Part 3 - Extracting key metrics from model output
+
+Once, we have fitted and chosen a model, it's time to extract what we need from it. In the next code chunk, I've made a function that takes a brms model as input and give all metrics we need as output (it only works on one of the models that can be specified via the script above, of course)
+
+In some places in the function you will see 3-dimensional arrays called. This is going to be the typical structure of many parts of a multivariate model fitted by brms:
+
+model_part[X,Y,Z],
+X = posterior sample index
+Y = data observation row
+Z = response variable (here, patches)
+
+```{r metrics_calculation_function}
+### slow !!!!! need a rewrite to optimise
+metrics_estimate <- function(mod = mod) {
+  tab_results <- list(NA)
+
+  METAPOPlevels <- levels(factor(tab$METAPOP_ID))
+  ###an object with each metapop name so we can loop and call their names as needed
+
+  for (h in 1:length(METAPOPlevels)) { ## we do everything metapop by metapop first
+
+    tab_subset <- subset(tab, METAPOP_ID == METAPOPlevels[h])
+
+    patch_by_patch_Nmean <- apply(fitted(mod, newdata = tab_subset, summary = FALSE), 3, rowMeans)
+    ## predictions of the number of mites for each patch at each time
+
+    metapopNmean <- rowSums(patch_by_patch_Nmean) # metapop size = sum of all patches
+    patchNmean <- metapopNmean / 9
+
+    ### there are three types of patch in a metapop differing in level of local connectedness
+    ### we can calculate mean patch size for each of them and compare them
+    Nmean_corners <- rowMeans(patch_by_patch_Nmean[, c(1, 3, 7, 9)])
+    Nmean_center <- patch_by_patch_Nmean[, 5]
+    Nmean_sides <- rowMeans(patch_by_patch_Nmean[, c(2, 4, 6, 8)])
+
+    ### get intercept means on the latent scale, excluding time effect
+    ### BUT including the METAPOP_ID average effect
+    ### (remember, we are working replicate by replicate, so this is needed
+    ### to have the correct latent intercept)
+    if (is.na(which.trt) == TRUE) {
+      latent_intercept <- as.data.frame(fixef(mod, summary = FALSE)) +
+        ranef(mod, summary = FALSE)$METAPOP_ID[, METAPOPlevels[h], ]
+    }
+
+    if (is.na(which.trt) == FALSE) {
+      latent_intercept <- as.data.frame(fixef(mod, summary = FALSE)) %>%
+        select(contains(paste("TREATMENT", unique(tab_subset$TREATMENT), sep = ""))) +
+        ranef(mod, summary = FALSE)$METAPOP_ID[, METAPOPlevels[h], ]
+    }
+
+
+    ### get the latent TIME variance-covariance matrix for the metapop we're currently in
+    include <- colnames(VarCorr(mod, summary = FALSE)$WEEK2$cov)
+    include <- include[str_detect(include, pattern = METAPOPlevels[h])]
+    vcv_latent_time <- VarCorr(mod, summary = FALSE)$WEEK2$cov[, include, include]
+
+
+    ### convert from latent TIME VCV matrix to observed scale VCV matrix
+    ## first, create a dummy array; values will be filled with correct values below
+    vcv_obs_time <- vcv_latent_time
+
+    ## !Read the de Villemereuil et al Genetics paper and QGglmm package help for details
+    ## but broad description of what happens below is
+    ## for each posterior sample (nsamples(mod)), create a vector psi, then fill it with value for each patch
+    ## then use this psi to get the observed VCV from the latent VCV
+    ## repeat for all posterior samples
+    for (i in 1:nsamples(mod)) {
+      psiM <- NA
+      for (j in 1:9) {
+        psiM[j] <- QGpsi(latent_intercept[i, j], vcv_latent_time[i, j, j], d.link.inv = function(x) {
+          exp(x)
+        })
+      }
+      psiM <- diag(psiM)
+      vcv_obs_time[i, , ] <- psiM %*% vcv_latent_time[i, , ] %*% t(psiM)
+    }
+
+
+    ### calculate our posterior variability metrics
+    alpha <- NA
+    gamma <- NA
+    for (i in 1:nsamples(mod)) {
+      alpha[i] <- alpha_wang_loreau(vcv_obs_time[i, , ], patch_by_patch_Nmean[i, ])
+      gamma[i] <- gamma_wang_loreau(vcv_obs_time[i, , ], patch_by_patch_Nmean[i, ])
+    }
+
+    ### group our metrics of interest in a data.frame
+    metrics <- data.frame(
+      metapopNmean = metapopNmean, patchNmean = patchNmean,
+      Nmean_corners = Nmean_corners, Nmean_center = Nmean_center, Nmean_sides = Nmean_sides,
+      alpha = alpha, beta1 = alpha / gamma, beta2 = alpha - gamma, gamma = gamma,
+      METAPOP_ID = as.character(METAPOPlevels[h]), TREATMENT = "all", which_model = deparse(substitute(mod))
+    ) %>%
+      ### precalculate within metapopulations differences BEFORE averaging
+      mutate(
+        deltaN_corners_center = Nmean_corners - Nmean_center,
+        deltaN_sides_center = Nmean_sides - Nmean_center,
+        deltaN_corners_sides = Nmean_corners - Nmean_sides
+      )
+
+    ### if the model has a TREATMENT effect, replace the default ("all") by the correct TREATMENT in the output table
+    if (is.na(which.trt) == FALSE) {
+      metrics$TREATMENT <- as.character(unique(tab_subset$TREATMENT))
+    }
+
+    ### add MCMC iteration number to table, important to compute differences among groups later
+    metrics <- as_tibble(metrics) %>%
+      add_column(.iteration = 1:dim(metrics)[1]) ## across all chains together
+
+    ### we store the output for each metapop in a list...
+    tab_results[[h]] <- metrics
+  }
+
+  ### ...and then we bind all the tables in the list together
+  tab_results <- bind_rows(tab_results) %>% #I need to find a way not to have the binding character and factor warning (it's just a warning)
+    group_by(TREATMENT, which_model, .iteration) %>%
+    summarize_if(is.numeric, mean) # alt: list(mean,var)
+  ## the very last line above is where we finally group metrics calculated at the replicate level
+  ## and average them through the whole dataset/by treatment
+
+  return(tab_results)
+}
+```
+
+
+```{r local_alpha_function}
+
+lvar_estimate <- function(mod = mod) {
+  lvar_results <- list(NA)
+
+  METAPOPlevels <- levels(factor(tab$METAPOP_ID))
+  ###an object with each metapop name so we can loop and call their names as needed
+
+  for (h in 1:length(METAPOPlevels)) { ## we do everything metapop by metapop first
+
+    tab_subset <- subset(tab, METAPOP_ID == METAPOPlevels[h])
+
+    patch_by_patch_Nmean <- apply(fitted(mod, newdata = tab_subset, summary = FALSE), 3, rowMeans)
+    ## predictions of the number of mites for each patch at each time
+
+#    metapopNmean <- rowSums(patch_by_patch_Nmean) # metapop size = sum of all patches
+#    patchNmean <- metapopNmean / 9
+
+    ### there are three types of patch in a metapop differing in level of local connectedness
+    ### we can calculate mean patch size for each of them and compare them
+    Nmean_corners <- rowMeans(patch_by_patch_Nmean[, c(1, 3, 7, 9)])
+    Nmean_center <- patch_by_patch_Nmean[, 5]
+    Nmean_sides <- rowMeans(patch_by_patch_Nmean[, c(2, 4, 6, 8)])
+
+    ### get intercept means on the latent scale, excluding time effect
+    ### BUT including the METAPOP_ID average effect
+    ### (remember, we are working replicate by replicate, so this is needed
+    ### to have the correct latent intercept)
+    if (is.na(which.trt) == TRUE) {
+      latent_intercept <- as.data.frame(fixef(mod, summary = FALSE)) +
+        ranef(mod, summary = FALSE)$METAPOP_ID[, METAPOPlevels[h], ]
+    }
+
+    if (is.na(which.trt) == FALSE) {
+      latent_intercept <- as.data.frame(fixef(mod, summary = FALSE)) %>%
+        select(contains(paste("TREATMENT", unique(tab_subset$TREATMENT), sep = ""))) +
+        ranef(mod, summary = FALSE)$METAPOP_ID[, METAPOPlevels[h], ]
+    }
+
+
+    ### get the latent TIME variance-covariance matrix for the metapop we're currently in
+    include <- colnames(VarCorr(mod, summary = FALSE)$WEEK2$cov)
+    include <- include[str_detect(include, pattern = METAPOPlevels[h])]
+    vcv_latent_time <- VarCorr(mod, summary = FALSE)$WEEK2$cov[, include, include]
+
+
+    ### convert from latent TIME VCV matrix to observed scale VCV matrix
+    ## first, create a dummy array; values will be filled with correct values below
+    vcv_obs_time <- vcv_latent_time
+
+    ## !Read the de Villemereuil et al Genetics paper and QGglmm package help for details
+    ## but broad description of what happens below is
+    ## for each posterior sample (nsamples(mod)), create a vector psi, then fill it with value for each patch
+    ## then use this psi to get the observed VCV from the latent VCV
+    ## repeat for all posterior samples
+    for (i in 1:nsamples(mod)) {
+      psiM <- NA
+      for (j in 1:9) {
+        psiM[j] <- QGpsi(latent_intercept[i, j], vcv_latent_time[i, j, j], d.link.inv = function(x) {
+          exp(x)
+        })
+      }
+      psiM <- diag(psiM)
+      vcv_obs_time[i, , ] <- psiM %*% vcv_latent_time[i, , ] %*% t(psiM)
+    }
+
+
+    ### calculate our posterior variability metrics
+    alpha_center <- NA
+    alpha_corner <- NA
+    alpha_edge <- NA
+    for (i in 1:nsamples(mod)) {
+      alpha_corner[i] <- alpha_wang_loreau(vcv_obs_time[i, c(1,3,7,9), c(1,3,7,9)], patch_by_patch_Nmean[i, c(1,3,7,9)])
+      alpha_center[i] <- alpha_wang_loreau(vcv_obs_time[i, c(5), c(5)], patch_by_patch_Nmean[i, c(5)])
+      alpha_edge[i] <- alpha_wang_loreau(vcv_obs_time[i, c(2,4,6,8), c(2,4,6,8)], patch_by_patch_Nmean[i, c(2,4,6,8)])
+      
+    }
+
+    ### group our metrics of interest in a data.frame
+    metrics <- data.frame(
+      Nmean_corners = Nmean_corners, Nmean_center = Nmean_center, Nmean_sides = Nmean_sides,
+      alpha_corner = alpha_corner, alpha_center = alpha_center, alpha_edge = alpha_edge,
+      METAPOP_ID = as.character(METAPOPlevels[h]), TREATMENT = "all", which_model = deparse(substitute(mod))
+    )
+
+    ### if the model has a TREATMENT effect, replace the default ("all") by the correct TREATMENT in the output table
+    if (is.na(which.trt) == FALSE) {
+      metrics$TREATMENT <- as.character(unique(tab_subset$TREATMENT))
+    }
+
+    ### add MCMC iteration number to table, important to compute differences among groups later
+    metrics <- as_tibble(metrics) %>%
+      add_column(.iteration = 1:dim(metrics)[1]) ## across all chains together
+
+    ### we store the output for each metapop in a list...
+    lvar_results[[h]] <- metrics
+  }
+
+  ### ...and then we bind all the tables in the list together
+  lvar_results <- bind_rows(lvar_results) %>% #I need to find a way not to have the binding character and factor warning (it's just a warning)
+    group_by(TREATMENT, which_model, .iteration) %>%
+    summarize_if(is.numeric, mean) # alt: list(mean,var)
+  ## the very last line above is where we finally group metrics calculated at the replicate level
+  ## and average them through the whole dataset/by treatment
+
+  return(lvar_results)
+}
+```
+Once the function is in the environment, to get what we want, we "just" have to do this:
+```{r get_results}
+tab_results <- metrics_estimate(mod = mod) ## change model name as appropriate here
+```
+```{r get_results_local}
+lvar_result <- lvar_estimate(mod = mod)
+```
+(it will take time to go through the loop, I need to optimise the function)
+
+# Part 4- Summarizing the output and inference
+
+Here are some examples of ways to visualize and do comparisons on the output. Please look the help for the different functions, and the tidybayes package help for other ideas and suggestions.
+```{r summary_inference_plot}
+ggplot(tab_results) + geom_density(aes(metapopNmean, fill = TREATMENT)) +
+  labs(x = "metapopulation mean population") +
+  theme(text = element_text(size = 20))
+
+ggplot(tab_results) + geom_density(aes(beta1, fill = TREATMENT), alpha = 0.5) +
+  labs(x = "beta variability") +
+  theme(text = element_text(size = 20))
+
+ggplot(tab_results) + geom_density(aes(alpha, fill = TREATMENT), alpha = 0.5) +
+  scale_x_continuous(limits = c(0,20)) +
+  labs(x = "alpha variability") +
+  theme(text = element_text(size = 20))
+
+ggplot(tab_results) + geom_density(aes(gamma, fill = TREATMENT), alpha = 0.5) +
+  scale_x_continuous(limits = c(0,10)) +
+  labs(x = "gamma variability") +
+  theme(text = element_text(size = 20))
+# local alphas
+
+ggplot(lvar_result) + geom_density(aes(alpha_center, fill = TREATMENT), alpha = 0.5) +
+  scale_x_continuous(limits = c(0,15))
+
+ggplot(lvar_result) + geom_density(aes(alpha_corner, fill = TREATMENT), alpha = 0.5) +
+  scale_x_continuous(limits = c(0,15))
+
+ggplot(lvar_result) + geom_density(aes(alpha_edge, fill = TREATMENT), alpha = 0.5) +
+  scale_x_continuous(limits = c(0,15))
+
+# divide random & non random
+
+ggplot(subset(tab_results, str_detect(tab_results$TREATMENT, pattern = ".NO"))) +
+  geom_density(aes(metapopNmean, fill = TREATMENT), alpha = 0.5) +
+  labs(x = "metapopulation mean population") +
+  theme(text=element_text(size=20))
+
+ggplot(subset(tab_results, str_detect(tab_results$TREATMENT, pattern = ".R"))) +
+  geom_density(aes(metapopNmean, fill = TREATMENT), alpha = 0.5) +
+  labs(x = "metapopulation mean population") +
+  theme(text=element_text(size=20))
+```
+
+```{r comparisons1}
+
+tab_results$Length <- factor(ifelse(str_detect(tab_results$TREATMENT, pattern = "16"), "16",
+                                        ifelse(str_detect(tab_results$TREATMENT, pattern = "8"), "8", "4")),
+                             levels = c("4", "8", "16"))
+
+tab_results$was.random <- ifelse(str_detect(tab_results$TREATMENT, pattern = ".R"), "R", "NO")
+
+lvar_result$Length <- factor(ifelse(str_detect(tab_results$TREATMENT, pattern = "16"), "16",
+                                     ifelse(str_detect(tab_results$TREATMENT, pattern = "8"), "8", "4")),
+                             levels = c("4", "8", "16"))
+
+lvar_result$was.random <- ifelse(str_detect(tab_results$TREATMENT, pattern = ".R"), "R", "NO")
+
+
+ggplot(tab_results) +
+  geom_density(aes(metapopNmean, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(Length~was.random, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Metapopulation mean density") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+ggplot(tab_results) +
+  geom_density(aes(metapopNmean, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(was.random~Length, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Metapopulation mean density") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+ggplot(subset(tab_results, alpha < 10)) +
+  geom_density(aes(alpha, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(Length~was.random, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Alpha variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+ggplot(subset(tab_results, alpha < 10)) +
+  geom_density(aes(alpha, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(was.random~Length, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Alpha variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+ggplot(tab_results) +
+  geom_density(aes(beta1, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(Length~was.random, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Beta variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+ggplot(tab_results) +
+  geom_density(aes(beta1, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(was.random~Length, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Beta variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+ggplot(subset(tab_results, gamma < 5)) +
+  geom_density(aes(gamma, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(Length~was.random, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Gamma variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+ggplot(subset(tab_results, gamma < 5)) +
+  geom_density(aes(gamma, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(was.random~Length, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Gamma variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+alphalimit <- 10
+ggplot(subset(lvar_result, alpha_center < alphalimit & alpha_corner < alphalimit & alpha_edge < alphalimit)) +
+  geom_density(aes(alpha_center, fill = "alpha_center"),  alpha = 0.5) +
+  geom_density(aes(alpha_corner, fill = "alpha_corner"), alpha = 0.5) +
+  geom_density(aes(alpha_edge, fill = "alpha_edge"), alpha = 0.5) +
+  coord_cartesian(xlim = c(0,alphalimit)) +
+  theme_bw()  +  labs(y = "proportion", x = "alpha variability") +
+  facet_grid(was.random~Length, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  scale_fill_discrete(name = "local connectedness",
+    breaks = c("alpha_center", "alpha_corner", "alpha_edge"),
+    labels = c("center", "corner", "edge")) +
+  theme(text=element_text(size = 20), legend.position = "bottom")
+
+ggplot(lvar_result) +
+  geom_density(aes(Nmean_center, fill = "Nmean_center"),  alpha = 0.5) +
+  geom_density(aes(Nmean_corners, fill = "Nmean_corners"), alpha = 0.5) +
+  geom_density(aes(Nmean_sides, fill = "Nmean_sides"), alpha = 0.5) +
+  theme_bw()  +  labs(y = "proportion", x = "mean local pop") +
+  facet_grid(was.random~Length, labeller = as_labeller(c("NO" = "non-random", "R" = "random", "4" = "4", "8" = "8", "16" = "16"))) +
+  scale_fill_discrete(name = "local connectedness",
+    breaks = c("Nmean_center", "Nmean_corners", "Nmean_sides"),
+    labels = c("center", "corner", "edge")) +
+  theme(text=element_text(size = 20), legend.position = "bottom")
+```
+
+```{r comparisons2}
+## calculating differences between treatment using compare_levels
+
+compare_levels(tab_results, variable = "metapopNmean", by = TREATMENT,
+               comparison = list(c("16.NO", "16.R"), c("8.NO", "8.R"), c("4.NO", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = metapopNmean), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Metapopulation mean density", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+compare_levels(tab_results, variable = "metapopNmean", by = TREATMENT,
+               comparison = list(c("16.R", "8.R"), c("16.R", "4.R"), c("8.R", "4.R"),
+                                 c("16.NO", "8.NO"), c("16.NO", "4.NO"), c("8.NO", "4.NO"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = metapopNmean), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Metapopulation mean density", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+compare_levels(subset(tab_results, alpha < 10), variable = "alpha", by = TREATMENT,
+               comparison = list(c("16.NO", "16.R"), c("8.NO", "8.R"), c("4.NO", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = alpha), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Alpha variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+compare_levels(subset(tab_results, alpha < 10), variable = "alpha", by = TREATMENT,
+               comparison = list(c("16.R", "8.R"), c("16.R", "4.R"), c("8.R", "4.R"),
+                                 c("16.NO", "8.NO"), c("16.NO", "4.NO"), c("8.NO", "4.NO"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = alpha), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Alpha variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+compare_levels(tab_results, variable = "beta1", by = TREATMENT,
+               comparison = list(c("16.NO", "16.R"), c("8.NO", "8.R"), c("4.NO", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = beta1), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Beta variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+compare_levels(tab_results, variable = "beta1", by = TREATMENT,
+               comparison = list(c("16.R", "8.R"), c("16.R", "4.R"), c("8.R", "4.R"),
+                                 c("16.NO", "8.NO"), c("16.NO", "4.NO"), c("8.NO", "4.NO"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = beta1), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Beta variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+compare_levels(subset(tab_results, gamma < 5), variable = "gamma", by = TREATMENT,
+               comparison = list(c("16.NO", "16.R"), c("8.NO", "8.R"), c("4.NO", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = gamma), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Gamma variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+compare_levels(subset(tab_results, gamma < 5), variable = "gamma", by = TREATMENT,
+               comparison = list(c("16.R", "8.R"), c("16.R", "4.R"), c("8.R", "4.R"),
+                                 c("16.NO", "8.NO"), c("16.NO", "4.NO"), c("8.NO", "4.NO"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = gamma), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Gamma variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+```
+
+```{r metapop_graphs}
+# divide per metapop
+
+ggplot(subset(lvar_result, str_detect(tab_results$TREATMENT, pattern = "16.NO"))) +
+  geom_density(aes(alpha_center), colour = "red") +
+  geom_density(aes(alpha_corner), colour = "blue") +
+  geom_density(aes(alpha_edge), colour = "green") +
+  scale_x_continuous(limits = c(0,15)) +
+  labs(title = "16 NO", x = "alpha")
+
+ggplot(subset(lvar_result, str_detect(tab_results$TREATMENT, pattern = "16.R"))) +
+  geom_density(aes(alpha_center), colour = "red") +
+  geom_density(aes(alpha_corner), colour = "blue") +
+  geom_density(aes(alpha_edge), colour = "green") +
+  scale_x_continuous(limits = c(0,15)) +
+  labs(title = "16 R", x = "alpha")
+
+ggplot(subset(lvar_result, str_detect(tab_results$TREATMENT, pattern = "8.NO"))) +
+  geom_density(aes(alpha_center), colour = "red") +
+  geom_density(aes(alpha_corner), colour = "blue") +
+  geom_density(aes(alpha_edge), colour = "green") +
+  scale_x_continuous(limits = c(0,15)) +
+  labs(title = "8 NO", x = "alpha")
+
+ggplot(subset(lvar_result, str_detect(tab_results$TREATMENT, pattern = "8.R"))) +
+  geom_density(aes(alpha_center), colour = "red") +
+  geom_density(aes(alpha_corner), colour = "blue") +
+  geom_density(aes(alpha_edge), colour = "green") +
+  scale_x_continuous(limits = c(0,15)) +
+  labs(title = "8 R", x = "alpha")
+
+ggplot(subset(lvar_result, str_detect(tab_results$TREATMENT, pattern = "4.NO"))) +
+  geom_density(aes(alpha_center), colour = "red") +
+  geom_density(aes(alpha_corner), colour = "blue") +
+  geom_density(aes(alpha_edge), colour = "green") +
+  scale_x_continuous(limits = c(0,15)) +
+  labs(title = "4 NO", x = "alpha")
+
+ggplot(subset(lvar_result, str_detect(tab_results$TREATMENT, pattern = "4.R"))) +
+  geom_density(aes(alpha_center), colour = "red") +
+  geom_density(aes(alpha_corner), colour = "blue") +
+  geom_density(aes(alpha_edge), colour = "green") +
+  scale_x_continuous(limits = c(0,15)) +
+  labs(title = "4 R", x = "alpha")
+
+
+compare_levels(subset(lvar_result, alpha_center < 20), variable = "alpha_center", by = TREATMENT) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = alpha_center)) +
+  geom_vline(xintercept = 0)
+```
+
+```{r combined_graphs}
+require(ggpubr)
+# 1st block
+
+p11 <- ggplot(subset(tab_results,was.random == "NO")) +
+  geom_density(aes(metapopNmean, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(Length~., labeller = as_labeller(c("4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Metapopulation mean density") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+p12 <- compare_levels(subset(tab_results, alpha < 20), variable = "alpha", by = TREATMENT,
+               comparison = list(c("16.NO", "8.NO"), c("16.NO", "4.NO"), c("8.NO", "4.NO"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = alpha), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Alpha variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+p13 <- compare_levels(tab_results, variable = "beta1", by = TREATMENT,
+               comparison = list(c("16.NO", "8.NO"), c("16.NO", "4.NO"), c("8.NO", "4.NO"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = beta1), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Beta variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+p14 <- compare_levels(subset(tab_results, gamma < 10), variable = "gamma", by = TREATMENT,
+               comparison = list(c("16.NO", "8.NO"), c("16.NO", "4.NO"), c("8.NO", "4.NO"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = gamma), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Gamma variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+ggarrange(p11, p12, p13, p14, labels = c("A", "B", "C", "D"), ncol = 2, nrow = 2)
+
+# block 2
+
+p21 <- ggplot(subset(tab_results,was.random == "R")) +
+  geom_density(aes(metapopNmean, fill = Length), alpha = 0.5) +
+  guides(fill = FALSE) +
+  facet_grid(Length~., labeller = as_labeller(c("4" = "4", "8" = "8", "16" = "16"))) +
+  labs(x = "Metapopulation mean density") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+p22 <- compare_levels(subset(tab_results, alpha < 10), variable = "alpha", by = TREATMENT,
+               comparison = list(c("16.R", "8.R"), c("16.R", "4.R"), c("8.R", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = alpha), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Alpha variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+p23 <- compare_levels(tab_results, variable = "beta1", by = TREATMENT,
+               comparison = list(c("16.R", "8.R"), c("16.R", "4.R"), c("8.R", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = beta1), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Beta variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+p24 <- compare_levels(subset(tab_results, gamma < 5), variable = "gamma", by = TREATMENT,
+               comparison = list(c("16.R", "8.R"), c("16.R", "4.R"), c("8.R", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = gamma), trim = FALSE, scale = "area") +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Gamma variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+ggarrange(p21, p22, p23, p24, labels = c("A", "B", "C", "D"), ncol = 2, nrow = 2)
+
+# block 3
+
+p31 <- compare_levels(tab_results, variable = "metapopNmean", by = TREATMENT,
+               comparison = list(c("16.NO", "16.R"), c("8.NO", "8.R"), c("4.NO", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = metapopNmean), trim = FALSE) +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Metapopulation mean density", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+p32 <- compare_levels(subset(tab_results, alpha < 10), variable = "alpha", by = TREATMENT,
+               comparison = list(c("16.NO", "16.R"), c("8.NO", "8.R"), c("4.NO", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = alpha), trim = FALSE) +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Alpha variability", y = "") +
+  theme(text=element_text(size = 20))
+
+p33 <- compare_levels(tab_results, variable = "beta1", by = TREATMENT,
+               comparison = list(c("16.NO", "16.R"), c("8.NO", "8.R"), c("4.NO", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = beta1), trim = FALSE) +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Beta variability", y = "Comparisons") +
+  theme(text=element_text(size = 20))
+
+p34 <- compare_levels(subset(tab_results, gamma < 5), variable = "gamma", by = TREATMENT,
+               comparison = list(c("16.NO", "16.R"), c("8.NO", "8.R"), c("4.NO", "4.R"))) %>%
+  ggplot() +
+  geom_halfeyeh(aes(y = TREATMENT, x = gamma), trim = FALSE) +
+  geom_vline(xintercept = 0) +
+  theme_bw() + labs(x = "Gamma variability", y = "") +
+  theme(text=element_text(size = 20))
+
+ggarrange(p31, p32 + rremove("y.text"), p33, p34  + rremove("y.text"), labels = c("A", "B", "C", "D"), ncol = 2, nrow = 2)
+
+
+```
+
+```{r simple_graphs}
+require(ggpubr)
+p11 <- ggplot(filter(tab_results, was.random == "NO")) +
+    stat_halfeyeh(aes(y = Length, x = metapopNmean, fill = Length)) +
+    guides(fill = FALSE) + scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) +
+    labs(x = "Metapopulation mean density") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+p12 <- ggplot(filter(tab_results, was.random == "NO" & alpha < quantile(alpha, 0.99))) +
+    stat_halfeyeh(aes(y = Length, x = alpha, fill = Length)) +
+    guides(fill = FALSE) + scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) +
+    labs(x = "Alpha variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+  
+p13 <- ggplot(filter(tab_results, was.random == "NO")) +
+    stat_halfeyeh(aes(y = Length, x = beta1, fill = Length)) +
+    guides(fill = FALSE) + scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) +
+    labs(x = "Beta variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+p14 <- ggplot(filter(tab_results, was.random == "NO" & gamma < quantile(gamma, 0.99))) +
+    stat_halfeyeh(aes(y = Length, x = gamma, fill = Length)) +
+    guides(fill = FALSE) + scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) +
+    labs(x = "Gamma variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+ggarrange(p11, p12 + rremove("y.text"), p13, p14  + rremove("y.text"), labels = c("A", "B", "C", "D"), ncol = 2, nrow = 2)
+
+p21 <- ggplot(filter(tab_results, was.random == "R")) +
+    stat_halfeyeh(aes(y = Length, x = metapopNmean, fill = Length)) +
+    guides(fill = FALSE) + scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) +
+    labs(x = "Metapopulation mean density") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+p22 <- ggplot(filter(tab_results, was.random == "R" & alpha < quantile(alpha, 0.99))) +
+    stat_halfeyeh(aes(y = Length, x = alpha, fill = Length)) +
+    guides(fill = FALSE) + scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) +
+    labs(x = "Alpha variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+  
+p23 <- ggplot(filter(tab_results, was.random == "R")) +
+    stat_halfeyeh(aes(y = Length, x = beta1, fill = Length)) +
+    guides(fill = FALSE) + scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) +
+    labs(x = "Beta variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+p24 <- ggplot(filter(tab_results, was.random == "R" & gamma < quantile(gamma, 0.99))) +
+    stat_halfeyeh(aes(y = Length, x = gamma, fill = Length)) +
+    guides(fill = FALSE) + scale_fill_manual(values = c("#D55E00", "#E69F00", "#F0E442")) +
+    labs(x = "Gamma variability") + theme_bw() +
+  theme(text=element_text(size = 20))
+
+ggarrange(p21, p22 + rremove("y.text"), p23, p24  + rremove("y.text"), labels = c("A", "B", "C", "D"), ncol = 2, nrow = 2)
+
+lvar_graph <- lvar_result %>%
+  select(1,3:6,10,11) %>%
+  gather("position", "mean", 4:6) %>%
+  mutate(position = substring(position, 7))
+
+ggplot(lvar_graph) +
+  stat_halfeyeh(aes(y = Length, x = mean, fill = position), alpha = .75) +
+  facet_grid(was.random ~., labeller = as_labeller(c("NO" = "non-random", "R" = "random"))) +
+  theme_bw()  +  labs(y = "connectedness", x = "mean local density") +
+  scale_fill_discrete(name = "local connectedness",
+    breaks = c("center", "corners", "sides"),
+    labels = c("center", "corner", "edge")) +
+  theme(text=element_text(size = 20), legend.position = "bottom")
+```
+# Extra
+
+```{r meanpopcheck}
+meanpatch <- tab %>%
+  group_by(METAPOP_ID, WEEK) %>%
+  summarise(metatot = sum(P11, P12, P13, P21, P22, P23, P31, P32, P33))
+
+metameans <- ungroup(meanpatch) %>%
+  group_by(METAPOP_ID) %>%
+  summarise(metamean = mean(metatot))
+
+metameans$length <- factor(ifelse(str_detect(metameans$METAPOP_ID, pattern = "16"), "16",
+                                        ifelse(str_detect(metameans$METAPOP_ID, pattern = "8"), "8", "4")),
+                             levels = c("4", "8", "16"))
+
+metameans$was.random <- factor(ifelse(str_detect(metameans$METAPOP_ID, pattern = "NO"), "0", "1"),
+                             levels = c("0", "1"))
+
+ggplot(metameans, aes(x = length, y = metamean, fill = was.random)) + geom_bar(stat = "identity", position = "dodge")
+
+mean(filter(metameans, was.random == 0 & length == 16)$metamean) - mean(filter(metameans, was.random == 1 & length == 16)$metamean)
+
+mean(filter(metameans, was.random == 0 & length == 4)$metamean) - mean(filter(metameans, was.random == 1 & length == 4)$metamean)
+
+mean(filter(metameans, was.random == 0 & length == 8)$metamean) - mean(filter(metameans, was.random == 1 & length == 8)$metamean)
+
+diff16 <- as.numeric(c(metameans[1,2]-metameans[6,2], metameans[1,2]-metameans[7,2], metameans[1,2]-metameans[8,2],
+  metameans[2,2]-metameans[6,2], metameans[2,2]-metameans[7,2], metameans[2,2]-metameans[8,2],
+  metameans[3,2]-metameans[6,2], metameans[3,2]-metameans[7,2], metameans[3,2]-metameans[8,2],
+  metameans[4,2]-metameans[6,2], metameans[4,2]-metameans[7,2], metameans[4,2]-metameans[8,2],
+  metameans[5,2]-metameans[6,2], metameans[5,2]-metameans[7,2], metameans[5,2]-metameans[8,2]))
+
+diff4 <- as.numeric(c(metameans[9,2]-metameans[14,2], metameans[9,2]-metameans[15,2], metameans[9,2]-metameans[16,2],
+metameans[10,2]-metameans[14,2], metameans[10,2]-metameans[15,2], metameans[10,2]-metameans[16,2],
+metameans[11,2]-metameans[14,2], metameans[11,2]-metameans[15,2], metameans[11,2]-metameans[16,2],
+metameans[12,2]-metameans[14,2], metameans[12,2]-metameans[15,2], metameans[12,2]-metameans[16,2],
+metameans[13,2]-metameans[14,2], metameans[13,2]-metameans[15,2], metameans[13,2]-metameans[16,2]))
+
+diff8 <- as.numeric(c(metameans[17,2]-metameans[22,2], metameans[17,2]-metameans[23,2], metameans[17,2]-metameans[24,2],
+metameans[18,2]-metameans[22,2], metameans[18,2]-metameans[23,2], metameans[18,2]-metameans[24,2],
+metameans[19,2]-metameans[22,2], metameans[19,2]-metameans[23,2], metameans[19,2]-metameans[24,2],
+metameans[20,2]-metameans[22,2], metameans[20,2]-metameans[23,2], metameans[20,2]-metameans[24,2],
+metameans[21,2]-metameans[22,2], metameans[21,2]-metameans[23,2], metameans[21,2]-metameans[24,2]))
+
+plot(diff16, rep(1,15))
+plot(diff4, rep(1,15))
+plot(diff8, rep(1,15))
+
+library(Rmisc)
+
+CI(diff4, ci = 0.9)
+CI(diff8, ci = 0.9)
+CI(diff16,ci = 0.9)
+```
+
+# References
+
+
+
+
