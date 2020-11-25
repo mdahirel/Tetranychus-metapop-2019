@@ -87,10 +87,13 @@ fits<-data %>%
 ## if the temporal variability was constant across all treatments?
 
 #basically see:
-fx_a = rnorm(1000,0,1); rn_a=rnorm(1000,0,1)
-fx_b = rnorm(1000,0,1); rn_b=rnorm(1000,0,2)
-mean(exp(fx_a+rn_a))
-mean(exp(fx_b+rn_b))
+fx_a = rnorm(10000,0,1); rn_a=rnorm(10000,0,1)
+fx_b = rnorm(10000,0,1); rn_b=rnorm(10000,0,2)
+mean(exp(fx_a+rn_a)); EnvStats::geoMean(exp(fx_a+rn_a))
+mean(exp(fx_b+rn_b)); EnvStats::geoMean(exp(fx_b+rn_b))
+mean(exp(fx_a)); EnvStats::geoMean(exp(fx_a))
+mean(exp(fx_b)); EnvStats::geoMean(exp(fx_b))
+
 ##when backtransformed, treatments a and b can differ if their random part differ
 ## even if the fixed part doesn't
 ## when we allow random effect to differ between treatments in non Gaussian GLMM, 
