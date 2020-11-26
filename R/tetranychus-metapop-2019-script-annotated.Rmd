@@ -55,8 +55,8 @@ library(here)
 rstan_options(auto_write = TRUE)
 options(mc.cores = 2) ## if this slows your computer down too much, reduce ; if you have > 4 cores, you can increase
 N_chains <- 4
-N_warmup <- 10000   ## used for publication: 10000 ## 500 is enough for tests
-N_iter <- N_warmup + 3000  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
+N_warmup <- 200   ## used for publication: 10000 ## 500 is enough for tests
+N_iter <- N_warmup + 200  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
 
 ```
 
@@ -65,7 +65,7 @@ N_iter <- N_warmup + 3000  ## recommended for publication-level quality: N_warmu
 
 ## 1B – data loading and wrangling
 
-```{r data_load}
+```{r data-load}
 raw_data <- read_csv(here("data","tetranychus-metapop-2019-dataset.csv"))
 ```
 
@@ -81,7 +81,7 @@ The variables in `raw_data` are as follow:
 
 In the raw dataset, data are stored so that there is one column for all population sizes, and a column saying which patch it belongs to. This is a tidy way to store info if the patch is our unit of analysis, not if the metapopulation is. To fit our multivariate model, we need one column per patch position instead:
 
-```{r data_reshape}
+```{r data-reshape}
 
 data <- raw_data %>% 
   mutate(PATCH2= paste("P", PATCH, sep = "")) %>% 
@@ -100,13 +100,21 @@ Npatches <- length(unique(raw_data$PATCH)) ### as a check, counting how many pat
 ```
 
 The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its full state at one time point). 
-The `WEEK2` variable is useful to fit separate random effects per replicate (this is because in `brms`, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation)
+The `WEEK2` variable is useful to fit separate random effects per replicate (this is because in `brms`, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation).
+
+We finish by adding a metapopulation total column, which may be useful for some comparisons:
+
+```{r metapop-sum}
+data <- data %>% 
+  mutate(METAPOP_N = select(.,P11:P33) %>% rowSums())
+```
+
 
 ## 1-C Functions for $\alpha$, $\beta$, $\gamma$ variability
 
-One of the aims of this script is estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
+One of the aims of this script is accurately estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
 
-```{r wang_loreau}
+```{r wang-loreau}
 
 alpha_wang_loreau <- function(varcorr, means) {
   varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
@@ -135,7 +143,7 @@ gamma_wang_loreau <- function(varcorr, means) {
 }
 
 # no function for beta 1, it's simply 1/phi or alpha/gamma
-# I wrote the beta 2 and the phi function for completedness, we don't need them
+# the beta 2 and the phi functions are here for completeness and checks, we don't need them
 # because both betas can be defined through alpha and gamma
 # beta 1: see above, beta2 = alpha - gamma
 
