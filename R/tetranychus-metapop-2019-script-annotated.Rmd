@@ -180,9 +180,9 @@ The formula for the model for the number of adult females $N_{i,x,y,t}$ in metap
 
 $$\begin{equation*}
 N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
-\log(\lambda_{[i,1,1,t]}) = \alpha_{[1,1]} + \beta_{[i,1,1]} + \gamma_{[i,1,1,t]} \\
+\log(\lambda_{[i,1,1,t]}) = \alpha_{[1,1]\textrm{TREATMENT}[i]} + \beta_{[i,1,1]} + \gamma_{[i,1,1,t]} \\
 ...\\
-\log(\lambda_{[i,3,3,t]}) = \alpha_{[3,3]} + \beta_{[i,3,3]} + \gamma_{[i,3,3,t]} \\
+\log(\lambda_{[i,3,3,t]}) = \alpha_{[3,3]\textrm{TREATMENT}[i]} + \beta_{[i,3,3]} + \gamma_{[i,3,3,t]} \\
 
 \mathbf{}\left[\begin{matrix}
 \beta_{[i,1,1]} \\ ... \\ \beta_{[i,3,3]} 
@@ -223,61 +223,39 @@ N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
 
 \end{equation*}$$
 
-where $\alpha$ are average patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\gamma$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}$ the correlation matrices.
+where $\alpha$ are treatment-specific latent patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\gamma$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}$ the correlation matrices.
 
-You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything in the end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results. Note that this also mean this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
+You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything in the end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results (we'll come back to these non-linearities later). It is important to note that this also mean this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
 
-We can add a treatment effect to it (so $\alpha_{[x,y]}$ becomes $\alpha_{[x,y]\textrm{TREATMENT}[i]}$), to estimate whether our treatments affect mean population size.  We do not need to alter the temporal variance-covariance matrix if we decide to add a treatment effect. Indeed it’s already split by replicate metapopulation; if we want to know how it varies by treatment, we can just average our final replicate-level metrics at the end by treatment instead of averaging all the replicates together.
+Similarly, we can write a (simpler) model for the total metapopulation size $M$ (the `METAPPOP_ID` column):
+
+$$
+\begin{equation*}
+M_{[i,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,t]}) \\
+\log(\lambda_{[i,t]}) = \alpha_{\textrm{TREATMENT}[i]} + \beta_{[i]} + \gamma_{[i,t]} \\
+
+\beta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\beta}) \\
+\gamma_{[i,t]} \sim \mathrm{Normal}(0, \sigma_{\gamma[i]})
+
+\end{equation*}
+$$
+(the temporal variance is again replicate-specific and serves again as an observation-level random effect)
 
 ## 2B - Implementation - formulas
 
-This is implemented in R as follow. First, a bit to modify to set whether or not there is going to be a treatment effect:
+This is implemented in R as follow. First, we need to create a `TREATMENT` variable combining `LENGTH` and `SHUFFLE`.
 
-```{r treatment_select}
-which.trt <- c("LENGTH", "SHUFFLE") ## CHANGE as needed
-### ^you say in which.trt what treatment you want, if you want an interaction, just put c("FACTOR1","FACTOR2")
-## if you want a model with everything pooled, which.trt <- NA
-## it converts it as a factor automatically
-
-shared.among.metapop.var <- TRUE ## DO NOT CHANGE, here for completedness only
-### ^ if TRUE (default), means the metapopulation random effect is common to all replicates
-### if FALSE and which.trt!= NA, we estimate different metapopulation random effects for each treatment
-### interesting in theory (do different treatments drift at the same rate?)
-### but not enough replicates to do that here (in some cases only 3 replicates to estimate a correlation :( )
+```{r treatment-create}
+data <- data %>% 
+  mutate(TREATMENT = interaction(LENGTH, SHUFFLE))
 ```
 
-And then the script selects the right model formula based on this.
+Then we build the formula for both the patch by patch multivariate model and the metapopulation total univariate model:
 
-```{r formula_build}
-if (sum(is.na(which.trt)) > 0) { ## model formula if we assume no treatment effect whatsoever
-
-  metapopformula <- mvbf(
-    bf(P11 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-    bf(P12 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-    bf(P13 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-    bf(P21 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-    bf(P22 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-    bf(P23 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-    bf(P31 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-    bf(P32 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-    bf(P33 ~ 1 + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson)
-  )
-}
-
-## see vignette("brms_multivariate") for help on the syntax above, in particular the (1|P|random effect) syntax
+```{r formula}
+## see vignette("brms_multivariate") for help on the syntax, in particular the (1|P|random effect) syntax
 ## see ?gr() for help too if needed
-
-if (sum(is.na(which.trt)) == 0) { ## so what is the model formula if we want to test the effect of treatment?
-
-  if (length(which.trt) == 1) {
-    data$TREATMENT <- factor(pull(data[, which.trt]))
-  }
-  if (length(which.trt) == 2) {
-    data$TREATMENT <- interaction(pull(data[, which.trt[1]]), pull(data[, which.trt[2]]))
-  }
-
-  if (shared.among.metapop.var == TRUE) {
-    metapopformula <- mvbf(
+metapopformula <- mvbf(
       bf(P11 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
       bf(P12 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
       bf(P13 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
@@ -286,51 +264,30 @@ if (sum(is.na(which.trt)) == 0) { ## so what is the model formula if we want to 
       bf(P23 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
       bf(P31 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
       bf(P32 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-      bf(P33 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson)
+      bf(P33 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
+      
+      bf(METAPOP_N ~ 0 + TREATMENT + (1|METAPOP_ID) + (1|gr(WEEK2, by = METAPOP_ID)), family = poisson)
     )
-  }
-
-  if (shared.among.metapop.var == FALSE) {
-    metapopformula <- mvbf(
-      bf(P11 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-      bf(P12 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-      bf(P13 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-      bf(P21 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-      bf(P22 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-      bf(P23 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-      bf(P31 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-      bf(P32 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
-      bf(P33 ~ 0 + TREATMENT + (1 | P | gr(METAPOP_ID, by = TREATMENT)) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson)
-    )
-  }
-}
 ```
 
-(note the `~0 + TREATMENT`, rather than `~TREATMENT` syntax in the fixed effects. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed, and be sure all prior means have the same precision. See Schielzeth [-@schielzethSimpleMeansImprove2010] and McElreath [-@mcelreathStatisticalRethinkingBayesian2020].
+note the `~0 + TREATMENT`, rather than `~TREATMENT` syntax in the fixed effects. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed, and be sure all prior means have the same precision. See Schielzeth [-@schielzethSimpleMeansImprove2010] and McElreath [-@mcelreathStatisticalRethinkingBayesian2020].  
+
+see also the fact we "combined" the multivariate patch-level model and the univariate metapopulation-level model in one object (they aren't connected though, see the random effects). It's just to fit them in the same `brm` call to make it easier to compare the posteriors later if we want.
 
 ## 2C - Implementation - choosing priors
 
-We then select our priors. The priors I propose here are weakly informative [sensu @mcelreathStatisticalRethinkingBayesian2020]. For the fixed effects coefficients (corresponding to latent, i.e. on log scale, grand means of single patch population size), I based myself roughly on the entire distribution of population densities in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015] (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in De Roissart *et al.* (which would be something like $\textrm{Normal}(1.8,0.9)$), both to have round numbers and to avoid giving too much weight to the information from that paper.  
+We then select our priors. The priors I propose here are weakly informative [sensu @mcelreathStatisticalRethinkingBayesian2020]. For the fixed effects coefficients (corresponding to latent, i.e. on log scale, grand means of single patch population size), I based myself roughly on the entire distribution of population densities in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015] (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in De Roissart *et al.* (which would be something like $\textrm{Normal}(1.8,0.9)$ for one patch), both to have round numbers and to avoid giving too much weight to the information from that paper.  
 
-```{r prior_setting}
-
-if (sum(is.na(which.trt)) > 0) {
+```{r prior-setting}
   prior <- c(
-    set_prior("normal(2,1)", class = "Intercept", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("normal(0,1)", class = "sd", group="WEEK2", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(2,1)", class = "b", 
+              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID", 
+              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(0,1)", class = "sd", group="WEEK2", 
+              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
     set_prior("lkj(2)", class = "cor") # mildly skeptical of very high correlations (positive or negative)
   )
-}
-
-if (sum(is.na(which.trt)) == 0) {
-  prior <- c(
-    set_prior("normal(2,1)", class = "b", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("normal(0,1)", class = "sd", group="WEEK2", resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("lkj(2)", class = "cor") # mildly skeptical of very high correlations (positive or negative)
-  )
-}
 ```
 
 ## 2D - Implementation - fitting
@@ -338,17 +295,17 @@ if (sum(is.na(which.trt)) == 0) {
 We can now fit the model based on the choices we made earlier
 
 ```{r model_fitting}
-if(file.exists(here("R_output","model.Rdata")))
+if(file.exists(here("R_output","model.Rdata"))){
   # this if-else statement is avoid re-fitting a model if there is already one existing in R_output
   # to override, re-run the model and re-save manually by selecting only the relevant code lines (or delete the Rdata object before relaunching this code chunk)
-  {
   load(here("R_output","model.Rdata"))
   }else
     {
 
 mod <- brm(metapopformula, data = data, 
            iter = N_iter, warmup = N_warmup, chains = N_chains, 
-           prior = prior, seed = 42,
+           prior = prior, 
+           seed = 42,
            control = list(adapt_delta = 0.9))
 
 save(list="mod", file=here("R_output","model.Rdata"))
