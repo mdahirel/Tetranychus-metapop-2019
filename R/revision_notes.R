@@ -107,10 +107,25 @@ test <- test %>%
   mutate(vcv_metapop_obs = map2(.x = psiM, .y= vcv_metapop_latent,
        .f = ~ (.x %*% .y %*% t(.x))
   ))
-  
-##penser à inclure une vérif que le multivar psi calculé comme ça est bon (avec une self generated bivariate use case?)
 
 test2 <- test %>% 
+  mutate(Nfit_tempvar = map2(.x = fixef, .y = vcv_metapop_latent,
+                             .f = function(.x,.y){
+                               Ns <-.x   #to keep names, will be overwritten
+                               for (j in 1:9) {
+                                 Ns[j] <- QGparams(mu = unlist(.x[, j]), var.a = .y[j, j], var.p = .y[j,j],
+                                                   model = "Poisson.log", verbose = FALSE)$mean.obs
+                               }
+                               Ns}  ))
+
+
+##the difference between npredict and nfit boils down to "nfit accounts for temporal variation but not temporal covariation"
+##not interesting
+## better use npredict with temporal covar accounted, Nnull geometric mean with no temporal at all
+
+##penser à inclure une vérif que le multivar psi calculé comme ça est bon (avec une self generated bivariate use case?)
+
+test3 <- test2 %>% 
   mutate(
     alpha = map2(.x = vcv_metapop_obs, .y = Npredict_allvar, .f = ~.x %>% alpha_wang_loreau(varcorr=., means = unlist(.y))),
     gamma = map2(.x = vcv_metapop_obs, .y = Npredict_allvar, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = unlist(.y)))
@@ -120,13 +135,13 @@ test2 <- test %>%
     beta1 = alpha / gamma, beta2 = alpha - gamma
   ) %>% 
   mutate(Nmean_allvar = map(.x = Npredict_allvar, .f = ~.x %>% rowMeans())) %>% 
-  mutate(Nmean_corners_allvar = map(.x = Npredict_allvar, .f = ~.x %>% select(c(P11,P13,P31,P33)) %>% rowMeans())) %>% 
-  mutate(Nmean_center_allvar = map(.x = Npredict_allvar, .f = ~.x %>% select(P22) %>% rowMeans())) %>% 
-  mutate(Nmean_sides_allvar = map(.x = Npredict_allvar, .f = ~.x %>% select(c(P12,P21,P23,P32)) %>% rowMeans())) %>% 
-  mutate(Nmean_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% rowMeans())) %>% 
-  mutate(Nmean_corners_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% select(c(P11,P13,P31,P33)) %>% rowMeans())) %>% 
+  #mutate(Nmean_corners_allvar = map(.x = Npredict_allvar, .f = ~.x %>% select(c(P11,P13,P31,P33)) %>% rowMeans())) %>% 
+  #mutate(Nmean_center_allvar = map(.x = Npredict_allvar, .f = ~.x %>% select(P22) %>% rowMeans())) %>% 
+  #mutate(Nmean_sides_allvar = map(.x = Npredict_allvar, .f = ~.x %>% select(c(P12,P21,P23,P32)) %>% rowMeans())) %>% 
+  #mutate(Nmean_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% rowMeans())) %>% 
+  #mutate(Nmean_corners_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% select(c(P11,P13,P31,P33)) %>% rowMeans())) %>% 
   mutate(Nmean_center_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% select(P22) %>% rowMeans())) %>% 
-  mutate(Nmean_sides_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% select(c(P12,P21,P23,P32)) %>% rowMeans())) %>% 
+  #mutate(Nmean_sides_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% select(c(P12,P21,P23,P32)) %>% rowMeans())) %>% 
   mutate(Nmean_novar = map(.x = Npredict_novar, .f = ~.x %>% rowMeans())) %>% 
   unnest(Nmean_allvar:Nmean_novar)
 
