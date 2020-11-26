@@ -38,7 +38,8 @@ This script uses the Stan language [@carpenterStanProbabilisticProgramming2017; 
 ```{r packages-loading}
 library(tidyverse)
 
-library(rstan) ## Stan
+#library(rstan) ## Stan
+library(cmdstanr) ## Stan
 library(brms) ## the interface we are using
 
 library(bayesplot)
@@ -52,7 +53,7 @@ library(patchwork)
 library(here)
 
 ## some useful default settings
-rstan_options(auto_write = TRUE)
+#rstan_options(auto_write = TRUE)
 options(mc.cores = 2) ## if this slows your computer down too much, reduce ; if you have > 4 cores, you can increase
 N_chains <- 4
 N_warmup <- 200   ## used for publication: 10000 ## 500 is enough for tests
@@ -308,7 +309,8 @@ mod <- brm(metapopformula, data = data,
            iter = N_iter, warmup = N_warmup, chains = N_chains, 
            prior = prior, 
            seed = 42,
-           control = list(adapt_delta = 0.9))
+           control = list(adapt_delta = 0.9),
+           backend= "cmdstanr")
 
 save(list="mod", file=here("R_output","model.Rdata"))
 }
