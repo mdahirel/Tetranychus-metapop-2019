@@ -8,7 +8,7 @@ FIXEF <- fixef(mod, summary = FALSE) %>% ### all model fixed effects, with one c
   mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
   pivot_longer(-.iteration) %>%        ### we pivot so we can split the "variable*treatment" into patch ID and treatment variables
   mutate(patch=substr(name,1,3),    ## we extract !!! TO ADAPT IF METAPOP SUM END UP IN MODEL
-         LENGTH=str_extract(name,"4|8|16"),
+         LENGTH=as.numeric(str_extract(name,"4|8|16")),
          SHUFFLE=str_extract(name,"NO$|R$")) %>%  # $ : end of string
   mutate(TREATMENT = interaction(LENGTH,SHUFFLE)) %>% 
   select(-name) %>%
@@ -26,7 +26,7 @@ RANEF_METAPOP<- ranef(mod, summary = FALSE)$METAPOP_ID %>%
   mutate(ranef_metapop = map(.x=ranef_metapop, 
                              .f = ~.x %>% bind_rows()  ##change from vector to tibble with one col = one patch
                              )) %>%  
-  mutate(LENGTH=str_extract(METAPOP_ID,"^4|^8|^16"),  ## ^: start of string
+  mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
          SHUFFLE=str_extract(METAPOP_ID,"NO|R")) %>% 
   mutate(TREATMENT = interaction(LENGTH,SHUFFLE))
 
@@ -39,9 +39,49 @@ GLOBAL_VCV_time <- VarCorr(mod, summary = FALSE)$WEEK2$cov %>%
   mutate(.iteration = 1:dim(.)[1])
 
 
+##fitted values on the observed scale (include ALL random effects; needed for the correct computation of variabilities)
+fits_allvar<-data %>% 
+  add_fitted_draws(mod) %>% 
+  ungroup() %>%
+  select(-c(P11:P33)) %>% # we remove  the ACTUAL observed data to avoid conflict with predictions
+  pivot_wider(names_from=.category,values_from=.value) %>% 
+  mutate(.iteration = .draw) %>% 
+  group_by(METAPOP_ID, LENGTH, SHUFFLE, .iteration) %>% 
+  summarise_at(vars(P11:P33), mean) %>% 
+  group_by(METAPOP_ID, LENGTH, SHUFFLE, .iteration) %>% 
+  nest() %>% 
+  rename(Npredict_allvar = data)
+
+##same with temporal var only (gives arithmetic mean of the typical metapop)
+fits_tempvar<-data %>% 
+  add_fitted_draws(mod, re_formula = ~(1|WEEK2)) %>% 
+  ungroup() %>%
+  select(-c(P11:P33)) %>% # we remove  the ACTUAL observed data to avoid conflict with predictions
+  pivot_wider(names_from=.category,values_from=.value) %>% 
+  mutate(.iteration = .draw) %>% 
+  group_by(METAPOP_ID, LENGTH, SHUFFLE, .iteration) %>% 
+  summarise_at(vars(P11:P33), mean) %>% 
+  group_by(METAPOP_ID, LENGTH, SHUFFLE, .iteration) %>% 
+  nest() %>% 
+  rename(Npredict_tempvar = data)
+
+##same with fixed effects only (underestimates true mean(), because gives something closer to geometric mean of the typical metapop)
+fits_novar<-data %>% 
+  add_fitted_draws(mod, re_formula = NA) %>% 
+  ungroup() %>%
+  select(-c(P11:P33)) %>% # we remove  the ACTUAL observed data to avoid conflict with predictions
+  pivot_wider(names_from=.category,values_from=.value) %>% 
+  mutate(.iteration = .draw) %>% 
+  group_by(METAPOP_ID, LENGTH, SHUFFLE, .iteration) %>% 
+  summarise_at(vars(P11:P33), mean) %>% 
+  group_by(METAPOP_ID, LENGTH, SHUFFLE, .iteration) %>% 
+  nest() %>% 
+  rename(Npredict_novar = data)
+
+
 test <- inner_join(RANEF_METAPOP,GLOBAL_VCV_time, by = ".iteration") %>% 
   mutate(vcv_metapop_latent = map2(
-    .x = vcv_global, .y = METAPOP_ID,
+    .x = vcv_global_latent, .y = METAPOP_ID,
     .f = ~.x %>% .[str_detect(colnames(.x),.y),str_detect(colnames(.x),.y)]
   )) %>% 
   left_join(FIXEF) %>% 
@@ -49,22 +89,50 @@ test <- inner_join(RANEF_METAPOP,GLOBAL_VCV_time, by = ".iteration") %>%
     .x = fixef, .y = ranef_metapop, ##the latent metapop level intercept is the sum of the global mean + the metapop level ranef
     .f=~ as_tibble(.x+.y))
   ) %>% 
-  mutate(obs_scale_patchNs = map(
-    .x = latent_intercepts,
-    .f = ~exp(.x))) %>% 
-  mutate(Nmean_patch = map(.x = obs_scale_patchNs, .f =~.x %>% rowMeans()))  %>% unnest(Nmean_patch)
+  left_join(fits_allvar) %>% 
+  left_join(fits_tempvar) %>% 
+  left_join(fits_novar)
+
+test <- test %>% 
+  mutate(psiM = map2(.x = latent_intercepts, .y = vcv_metapop_latent,
+                     .f = function(.x,.y){
+                       psiM <-NA
+                       for (j in 1:9) {
+                         psiM[j] <- QGpsi(.x[, j], .y[j, j], 
+                                          d.link.inv = function(x) { exp(x)})
+                       }
+                       diag(psiM)
+                     }  
+  )) %>% 
+  mutate(vcv_metapop_obs = map2(.x = psiM, .y= vcv_metapop_latent,
+       .f = ~ (.x %*% .y %*% t(.x))
+  ))
+  
+##penser à inclure une vérif que le multivar psi calculé comme ça est bon (avec une self generated bivariate use case?)
+
+test2 <- test %>% 
+  mutate(
+    alpha = map2(.x = vcv_metapop_obs, .y = Npredict_allvar, .f = ~.x %>% alpha_wang_loreau(varcorr=., means = unlist(.y))),
+    gamma = map2(.x = vcv_metapop_obs, .y = Npredict_allvar, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = unlist(.y)))
+  ) %>% 
+  unnest(cols=c(alpha,gamma)) %>% 
+  mutate(
+    beta1 = alpha / gamma, beta2 = alpha - gamma
+  ) %>% 
+  mutate(Nmean_allvar = map(.x = Npredict_allvar, .f = ~.x %>% rowMeans())) %>% 
+  mutate(Nmean_corners_allvar = map(.x = Npredict_allvar, .f = ~.x %>% select(c(P11,P13,P31,P33)) %>% rowMeans())) %>% 
+  mutate(Nmean_center_allvar = map(.x = Npredict_allvar, .f = ~.x %>% select(P22) %>% rowMeans())) %>% 
+  mutate(Nmean_sides_allvar = map(.x = Npredict_allvar, .f = ~.x %>% select(c(P12,P21,P23,P32)) %>% rowMeans())) %>% 
+  mutate(Nmean_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% rowMeans())) %>% 
+  mutate(Nmean_corners_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% select(c(P11,P13,P31,P33)) %>% rowMeans())) %>% 
+  mutate(Nmean_center_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% select(P22) %>% rowMeans())) %>% 
+  mutate(Nmean_sides_tempvar = map(.x = Npredict_tempvar, .f = ~.x %>% select(c(P12,P21,P23,P32)) %>% rowMeans())) %>% 
+  mutate(Nmean_novar = map(.x = Npredict_novar, .f = ~.x %>% rowMeans())) %>% 
+  unnest(Nmean_allvar:Nmean_novar)
+
+  
 
 
-##fitted values on the observed scale (include ALL random effects; needed for the correct computation of variabilities)
-
-fits<-data %>% 
-  add_fitted_draws(mod) %>% 
-  ungroup() %>%
-  select(-c(P11:P33)) %>% # we remove  the ACTUAL observed data to avoid conflict with predictions
-  pivot_wider(names_from=.category,values_from=.value) %>% 
-  mutate(.iteration = .draw) %>% 
-  group_by(METAPOP_ID, LENGTH, SHUFFLE, .iteration) %>% 
-  summarise_at(vars(P11:P33), mean)
 
 ### the problem is the non-linear effects caused by ignoring or not random effects
 ### as said in villemereuil 2018, the approach above is the only one that recover the correct mean
@@ -87,12 +155,15 @@ fits<-data %>%
 ## if the temporal variability was constant across all treatments?
 
 #basically see:
-fx_a = rnorm(10000,0,1); rn_a=rnorm(10000,0,1)
-fx_b = rnorm(10000,0,1); rn_b=rnorm(10000,0,2)
+fx_a = rnorm(10000,0,0.1); rn_a=rnorm(10000,0,1)
+fx_b = rnorm(10000,0,0.1); rn_b=rnorm(10000,0,2)
+fx_c = rnorm(10000,0.2,0.1); rn_c=rnorm(10000,0,1)
 mean(exp(fx_a+rn_a)); EnvStats::geoMean(exp(fx_a+rn_a))
 mean(exp(fx_b+rn_b)); EnvStats::geoMean(exp(fx_b+rn_b))
+mean(exp(fx_c+rn_c)); EnvStats::geoMean(exp(fx_c+rn_c))
 mean(exp(fx_a)); EnvStats::geoMean(exp(fx_a))
 mean(exp(fx_b)); EnvStats::geoMean(exp(fx_b))
+mean(exp(fx_c)); EnvStats::geoMean(exp(fx_c))
 
 ##when backtransformed, treatments a and b can differ if their random part differ
 ## even if the fixed part doesn't
