@@ -38,8 +38,8 @@ This script uses the Stan language [@carpenterStanProbabilisticProgramming2017; 
 ```{r packages-loading}
 library(tidyverse)
 
-#library(rstan) ## Stan
-library(cmdstanr) ## Stan
+#library(rstan) ## Stan backend
+library(cmdstanr) ## Stan backend (another)
 library(brms) ## the interface we are using
 
 library(bayesplot)
@@ -53,11 +53,11 @@ library(patchwork)
 library(here)
 
 ## some useful default settings
-#rstan_options(auto_write = TRUE)
+#rstan_options(auto_write = TRUE) #for rstan
 options(mc.cores = 2) ## if this slows your computer down too much, reduce ; if you have > 4 cores, you can increase
 N_chains <- 4
-N_warmup <- 200   ## used for publication: 10000 ## 500 is enough for tests
-N_iter <- N_warmup + 200  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
+N_warmup <- 10000   ## used for publication: 10000 ## 500 is enough for tests
+N_iter <- N_warmup + 2500  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
 
 ```
 
@@ -80,7 +80,7 @@ The variables in `raw_data` are as follow:
 - `WEEK`: weeks since the start of data collection (first week coded as 1)
 - `AFEMA`: number of adult females counted on patch, our measure of abundance
 
-In the raw dataset, data are stored so that there is one column for all population sizes, and a column saying which patch it belongs to. This is a tidy way to store info if the patch is our unit of analysis, not if the metapopulation is. To fit our multivariate model, we need one column per patch position instead:
+In the raw dataset, data are stored so that there is one column for all population sizes, and a column saying which patch it belongs to. This is a tidy way to store info, but not adequate for what we want to do. To fit our multivariate model, we need one column per patch position instead:
 
 ```{r data-reshape}
 
@@ -89,7 +89,7 @@ data <- raw_data %>%
   mutate(PATCH2= str_remove(PATCH2, "[.]")) %>% 
 ### the two lines above make patches names (a) easier to use as column names (letter as 1st character)
 ### and consistent with brms standards on response variable names (best to avoid dots and underscore,
-### as some functions will remove them for output names and then matching input and output becomes harder)
+### as some functions will remove them for output names and then matching input and output becomes slightly harder)
   select(-c(PATCH)) %>%
   pivot_wider(names_from = PATCH2, values_from = AFEMA) %>%
   drop_na() %>% #3 out of ~550 rows contain NAs in at least one patch, discard
@@ -100,7 +100,7 @@ Npatches <- length(unique(raw_data$PATCH)) ### as a check, counting how many pat
 
 ```
 
-The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its full state at one time point). 
+The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its state at one time point). 
 The `WEEK2` variable is useful to fit separate random effects per replicate (this is because in `brms`, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation).
 
 We finish by adding a metapopulation total column, which may be useful for some comparisons:
@@ -113,7 +113,7 @@ data <- data %>%
 
 ## 1-C Functions for $\alpha$, $\beta$, $\gamma$ variability
 
-One of the aims of this script is accurately estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
+One of the aims of this script is to accurately estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
 
 ```{r wang-loreau}
 
