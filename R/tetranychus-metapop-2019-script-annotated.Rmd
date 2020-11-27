@@ -36,12 +36,11 @@ First, we’re going to load all the packages we need. This includes the `tidyve
 This script uses the Stan language [@carpenterStanProbabilisticProgramming2017; @standevelopmentteamRStanInterfaceStan2018] for model fitting.  The `RStan` package containing Stan has a non-standard installation process, please check online: https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started . The `brms` package [@burknerBrmsPackageBayesian2017] allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The `QGglmm` package by de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.
 
 ```{r packages-loading}
-library(tidyverse)
-
-#library(rstan) ## Stan backend
-library(cmdstanr) ## Stan backend (another)
+library(rstan) ## Stan backend
+#library(cmdstanr) ## Stan backend (another)
 library(brms) ## the interface we are using
 
+library(tidyverse)
 library(bayesplot)
 library(tidybayes)
 library(matrixStats)
@@ -53,11 +52,11 @@ library(patchwork)
 library(here)
 
 ## some useful default settings
-#rstan_options(auto_write = TRUE) #for rstan
+rstan_options(auto_write = TRUE) #for rstan
 options(mc.cores = 2) ## if this slows your computer down too much, reduce ; if you have > 4 cores, you can increase
 N_chains <- 4
-N_warmup <- 10000   ## used for publication: 10000 ## 500 is enough for tests
-N_iter <- N_warmup + 2500  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
+N_warmup <- 100   ## used for publication: 10000 ## 500 is enough for tests
+N_iter <- N_warmup + 100  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
 
 ```
 
@@ -244,11 +243,13 @@ $$
 
 ## 2B - Implementation - formulas
 
-This is implemented in R as follow. First, we need to create a `TREATMENT` variable combining `LENGTH` and `SHUFFLE`.
+This is implemented in R as follow. First, we need to create a `TREATMENT` variable combining `LENGTH` and `SHUFFLE`. We're also going to create some duplicate columns, just so that the random effects from the patch-by-patch model and from the "all-metapop" model don't end up in the same objects (it complicates postprocessing):
 
 ```{r treatment-create}
 data <- data %>% 
-  mutate(TREATMENT = interaction(LENGTH, SHUFFLE))
+  mutate(TREATMENT = interaction(LENGTH, SHUFFLE)) %>% 
+  mutate(WEEK3 = WEEK2) %>% 
+  mutate(METAPOP_ID2 = METAPOP_ID)
 ```
 
 Then we build the formula for both the patch by patch multivariate model and the metapopulation total univariate model:
@@ -267,7 +268,7 @@ metapopformula <- mvbf(
       bf(P32 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
       bf(P33 ~ 0 + TREATMENT + (1 | P | METAPOP_ID) + (1 | Q | gr(WEEK2, by = METAPOP_ID)), family = poisson),
       
-      bf(METAPOPSUM ~ 0 + TREATMENT + (1|METAPOP_ID) + (1|gr(WEEK2, by = METAPOP_ID)), family = poisson)
+      bf(METAPOPSUM ~ 0 + TREATMENT + (1|METAPOP_ID2) + (1|gr(WEEK3, by = METAPOP_ID2)), family = poisson)
     )
 ```
 
@@ -281,15 +282,18 @@ We then select our priors. The priors I propose here are weakly informative [sen
 
 ```{r prior-setting}
   prior <- c(
+    ### PRIORS FOR THE PATCH-LEVEL MODEL
     set_prior("normal(2,1)", class = "b", 
               resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("normal(4,1)", class = "b", 
-              resp = c("METAPOPSUM")),
     set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID", 
-              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33", "METAPOPSUM")),
+              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
     set_prior("normal(0,1)", class = "sd", group="WEEK2", 
-              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33", "METAPOPSUM")),
-    set_prior("lkj(2)", class = "cor") # mildly skeptical of very high correlations (positive or negative)
+              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("lkj(2)", class = "cor"), # mildly skeptical of very high correlations (positive or negative)
+    ### PRIORS FOR THE METAPOP LEVEL MODEL
+    set_prior("normal(4,1)", class = "b", resp = c("METAPOPSUM")),
+    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID2", resp = c("METAPOPSUM")),
+    set_prior("normal(0,1)", class = "sd", group = "WEEK3", resp = c("METAPOPSUM"))
   )
 ```
 
@@ -310,13 +314,19 @@ mod <- brm(metapopformula, data = data,
            prior = prior, 
            seed = 42,
            control = list(adapt_delta = 0.9),
-           backend= "cmdstanr")
+           backend= "rstan")
+
+##with rstan as backend, the model *may* throw some some rhats=NA warnings on exit
+## they can (for once) be safely ignored: related issue: https://github.com/paul-buerkner/brms/issues/865
+## these warnings don't pop up when cmdstanr is used as backend (other "normal" warnings will appear with both backends)
+## or when doing summary(mod)
+## you can check that only parameters that should be constant give NA warnings through rhat(mod)
 
 save(list="mod", file=here("R_output","model.Rdata"))
 }
 ```
 
-Note that it can take some time to finish (around 2000 iterations/h/core in my laptop).
+Note that it can take some time to finish (around 2000-4000 iterations/h/core in my laptop).
 
 ```{r model_summary}
 summary(mod)  #look at Rhat and ESS both tail and bulk
