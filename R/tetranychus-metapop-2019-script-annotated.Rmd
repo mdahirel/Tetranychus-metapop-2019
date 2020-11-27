@@ -55,8 +55,8 @@ library(here)
 rstan_options(auto_write = TRUE) #for rstan
 options(mc.cores = 2) ## if this slows your computer down too much, reduce ; if you have > 4 cores, you can increase
 N_chains <- 4
-N_warmup <- 100   ## used for publication: 10000 ## 500 is enough for tests
-N_iter <- N_warmup + 100  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
+N_warmup <- 200   ## used for publication: 10000 ## 500 is enough for tests
+N_iter <- N_warmup + 200  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
 
 ```
 
@@ -112,7 +112,7 @@ data <- data %>%
 
 ## 1-C Functions for $\alpha$, $\beta$, $\gamma$ variability
 
-One of the aims of this script is to accurately estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
+One of the aims of this script is to estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a temporal variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
 
 ```{r wang-loreau}
 
@@ -225,9 +225,9 @@ N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
 
 where $\alpha$ are treatment-specific latent patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\gamma$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}$ the correlation matrices.
 
-You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything in the end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results (we'll come back to these non-linearities later). It is important to note that this also mean this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
+You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything in the end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results (we'll come back to these non-linearities later). It is important to note that it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
 
-Similarly, we can write a (simpler) model for the total metapopulation size $M$ (the `METAPPOP_ID` column):
+Similarly, we can write a (simpler) model for the total metapopulation size $M$ (the `METAPOPSUM` column):
 
 $$
 \begin{equation*}
@@ -278,7 +278,7 @@ see also the fact we "combined" the multivariate patch-level model and the univa
 
 ## 2C - Implementation - choosing priors
 
-We then select our priors. The priors I propose here are weakly informative [sensu @mcelreathStatisticalRethinkingBayesian2020]. For the fixed effects coefficients (corresponding to latent, i.e. on log scale, grand means of single patch population size), I based myself roughly on the entire distribution of non-zero population densities in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015] (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in De Roissart *et al.* (which would be something like $\textrm{Normal}(1.8,0.9)$ for one patch), both to have round numbers and to avoid giving too much weight to the information from that paper.  We used a $\textrm{Normal}(4,1)$ for the corresponding parameter for the metapopulation-level model; this correspond roughly to a multiplication by 9, and there are 9 patches in each metapopulation.
+We then select our priors. The priors we propose here are weakly informative [sensu @mcelreathStatisticalRethinkingBayesian2020]. For the fixed effects coefficients (corresponding to latent, i.e. on log scale, grand means of single patch population size), I based myself roughly on the entire distribution of non-zero population densities in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015] (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in De Roissart *et al.* (which would be something like $\textrm{Normal}(1.8,0.9)$ for one patch), mostly to have round numbers, but also to allow for a slightly wider prior.  We used a $\textrm{Normal}(4.2,1)$ for the corresponding parameter for the metapopulation-level model; this correspond roughly to a multiplication by 9 of the prior mean compared to the prior chosen for the patch-level approach, and there are 9 patches in each metapopulation.
 
 ```{r prior-setting}
   prior <- c(
@@ -291,9 +291,9 @@ We then select our priors. The priors I propose here are weakly informative [sen
               resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
     set_prior("lkj(2)", class = "cor"), # mildly skeptical of very high correlations (positive or negative)
     ### PRIORS FOR THE METAPOP LEVEL MODEL
-    set_prior("normal(4,1)", class = "b", resp = c("METAPOPSUM")),
-    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID2", resp = c("METAPOPSUM")),
-    set_prior("normal(0,1)", class = "sd", group = "WEEK3", resp = c("METAPOPSUM"))
+    set_prior("normal(4.2,1)", class = "b", resp = "METAPOPSUM"),
+    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID2", resp = "METAPOPSUM"),
+    set_prior("normal(0,1)", class = "sd", group = "WEEK3", resp = "METAPOPSUM")
   )
 ```
 
@@ -313,7 +313,7 @@ mod <- brm(metapopformula, data = data,
            iter = N_iter, warmup = N_warmup, chains = N_chains, 
            prior = prior, 
            seed = 42,
-           control = list(adapt_delta = 0.9),
+           control = list(adapt_delta = 0.8),
            backend= "rstan")
 
 ##with rstan as backend, the model *may* throw some some rhats=NA warnings on exit
