@@ -198,6 +198,21 @@ tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_pred)) 
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 
+####very crude for medians;; need to triple-check
+tab %>% mutate(P_fixef = map(.x=P_fixef,.f=~.x %>% mean())) %>% unnest(P_fixef) %>% 
+  group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(exp(P_fixef))) %>% 
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=factor(LENGTH)),.width=c(0.01,0.95),normalize="xy")+
+  geom_point(
+    data = obssummary, 
+    aes(x=P_median,y=factor(LENGTH)), col="grey40",alpha=0.5, position=position_jitter(height=0.2))+
+  scale_x_continuous("median population size")+
+  scale_y_discrete("bridge length (cm)")+
+  facet_wrap(~SHUFFLE)+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+
+
 ### the problem is the non-linear effects caused by ignoring or not random effects
 ### as said in villemereuil 2018, the approach above is the only one that recover the correct mean
 ### and variances
