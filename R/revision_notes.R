@@ -99,6 +99,19 @@ tab <- tab %>%
            M_fixef, M_ranef_rpl, M_var_time_latent, M_var_rpl_latent)
            )
 
+tab2<-tab %>% 
+  group_by(LENGTH,SHUFFLE,.iteration) %>% 
+  select(P_vcv_time_latent) %>% 
+  summarise(P_vcv_time_latent_list=list(P_vcv_time_latent)) %>% 
+  mutate(P_vcv_time_latent_mean=map(
+    .x=P_vcv_time_latent_list,
+    .f=~.x %>% 
+            simplify2array() %>% 
+            apply(FUN=mean,MARGIN=c(1,2))))
+
+tab<-tab %>% 
+  left_join(tab2)
+
 ### we can now start to calculate quantities of interest, replicate by replicate
 
 ### first, the predicted mean patch sizes:
@@ -107,7 +120,7 @@ tab <- tab %>%
   mutate(P_vcv_total_latent = map2(.x = P_vcv_time_latent, .y = P_vcv_rpl_latent,
                           .f = function(.x,.y){.x+.y})) %>% 
   mutate(P_pred = map2( ## patch by patch average
-    .x = P_fixef, .y = P_vcv_time_latent, # or vcv_total?
+    .x = P_fixef, .y = P_vcv_time_latent_mean, # or vcv_total? or vcv_time_latent, or vcv_time_latent_mean...?
     .f = ~ exp(.x + diag(.y)/2)  ## analytic form for the Poisson model, see annex villemereuil
   )) %>% 
   ### we then average within metapops:
@@ -154,10 +167,36 @@ tab <- tab %>%
     P_beta1 = P_alpha / P_gamma, P_beta2 = P_alpha - P_gamma
   )
 
+
+obssummary <- data %>% 
+  pivot_longer(P11:P33) %>% 
+  group_by(SHUFFLE,LENGTH,METAPOP_ID,name) %>% 
+  summarise(P_mean=mean(value), P_se=plotrix::std.error(value),P_median = median(value),
+            M_mean=mean(METAPOPSUM),M_se=plotrix::std.error(METAPOPSUM))
+
+tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_mean_all)) %>% 
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=factor(LENGTH)),.width=c(0.01,0.95),normalize="xy")+
+  geom_pointinterval(
+    data = obssummary, 
+    aes(x=P_mean, xmin=P_mean-P_se,xmax=P_mean+P_se,y=factor(LENGTH)), col="grey40",alpha=0.5, position=position_jitter(height=0.2))+
+  scale_x_continuous("mean population size")+
+  scale_y_discrete("bridge length (cm)")+
+  facet_wrap(~SHUFFLE)+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+
 tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_pred)) %>% 
-  ggplot()+stat_halfeye(aes(x=mean,y=factor(LENGTH)))+ facet_wrap(~SHUFFLE)
-
-
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=factor(LENGTH)),.width=c(0.01,0.95),normalize="xy")+
+  geom_pointinterval(
+    data = obssummary %>% select(LENGTH,SHUFFLE,M_mean,M_se) %>% distinct(), 
+    aes(x=M_mean, xmin=M_mean-M_se,xmax=M_mean+M_se,y=factor(LENGTH)), col="grey40", position=position_jitter(height=0.2))+
+  scale_x_continuous("mean metapopulation size")+
+  scale_y_discrete("bridge length (cm)")+
+  facet_wrap(~SHUFFLE)+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 
 ### the problem is the non-linear effects caused by ignoring or not random effects
 ### as said in villemereuil 2018, the approach above is the only one that recover the correct mean
@@ -194,17 +233,6 @@ mean(exp(fx_c)); EnvStats::geoMean(exp(fx_c))
 ## even if the fixed part doesn't
 ## when we allow random effect to differ between treatments in non Gaussian GLMM, 
 ### we can't based our inferences 100% on fx only, at least not naively
-
-
-fits %>% 
-  group_by(LENGTH, SHUFFLE, .iteration) %>% 
-  mutate(TOTALN = P11 + P12 + P13 + P21 + P22 + P23 + P31 + P32 + P33) %>% 
-  summarise(meanTOTAL = mean(TOTALN)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=meanTOTAL/9,y=factor(as.numeric(LENGTH))))+
-  facet_wrap(~SHUFFLE)
-### THIS IS HOW YOU FALL BACK ON THE MANUSCRIPT ESTIMATES
-
 ### correct based on arithmetic means
 
 ### naive use of model coefs gives geometric means of patches
