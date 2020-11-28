@@ -321,7 +321,8 @@ mod <- brm(metapopformula, data = data,
 ## these warnings don't pop up when cmdstanr is used as backend (other "normal" warnings will appear with both backends)
 ## or when doing summary(mod)
 ## you can check that only parameters that should be constant give NA warnings through rhat(mod)
-
+## and quickly look at the rhats:
+## hist(rhat(mod));abline(v=1.01,col="red")
 save(list="mod", file=here("R_output","model.Rdata"))
 }
 ```

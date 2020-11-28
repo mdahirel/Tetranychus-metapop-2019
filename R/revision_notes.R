@@ -1,103 +1,102 @@
 
+## columns prefixed by P_ refer to the patch-level model
+## by M_ to the metapop-level model
+## rpl something related to the among replicates variation
+##time to the temporal variance
 
 ### we first extract all the fixed effects:
-FIXEF <- fixef(mod, summary = FALSE) %>% ### all model fixed effects, with one column = one "variable" * treatment combination
+P_M_fixef <- fixef(mod, summary = FALSE) %>% ### all model fixed effects, with one column = one "variable" * treatment combination
   as_tibble() %>%
   mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
   pivot_longer(-.iteration) %>%        ### we pivot so we can split the "variable*treatment" into patch ID and treatment variables
   mutate(variable=str_extract(name,"P11|P12|P13|P21|P22|P23|P31|P32|P33|METAPOPSUM"),
          LENGTH=as.numeric(str_extract(name,"4|8|16")),
          SHUFFLE=str_extract(name,"NO$|R$")) %>%  # $ : end of string
-  mutate(TREATMENT = interaction(LENGTH,SHUFFLE)) %>% 
   select(-name) %>%
   pivot_wider(values_from=value,names_from=variable) %>%  ###we repivot back so that 1 column per patch
-  group_by(.iteration, LENGTH, SHUFFLE, TREATMENT) %>%  ### we group and nest by iteration (with treatment variables along for the ride)
-  nest(fixef_patch = c(P11:P33)) %>% 
-  mutate(fixef_patch = map(.x=fixef_patch, .f = ~.x %>% unlist())) %>%   #convert from tibble to vector
-  rename(fixef_metapop = METAPOPSUM)
+  group_by(.iteration, LENGTH, SHUFFLE) %>%  ### we group and nest by iteration (with treatment variables along for the ride)
+  nest(P_fixef = c(P11:P33)) %>% 
+  mutate(P_fixef = map(.x=P_fixef, .f = ~.x %>% unlist())) %>%   #convert list column from tibbles to vectors for faster calculations
+  rename(M_fixef = METAPOPSUM)
 
-### we then extract the among-metapop deviations for the patch by patch model:
-RANEF_REPLICATE<- ranef(mod, summary = FALSE)$METAPOP_ID %>% 
+### we then extract the among-metapop deviations for the patch by patch model (needed for estimating alpha beta gamma):
+P_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID %>% 
   array_tree(margin=c(1,2)) %>% ## convert array to list, enlisting by metapop nested in iteration
   tibble() %>% ## we "flatten" the list, iteration become rows of new tibble
-  rename(., ranef_rpl_patch=".") %>% 
+  rename(., P_ranef_rpl=".") %>% 
   mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
-  unnest_longer(ranef_rpl_patch, indices_to = "METAPOP_ID") %>% 
+  unnest_longer(P_ranef_rpl, indices_to = "METAPOP_ID") %>% 
   mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
-         SHUFFLE=str_extract(METAPOP_ID,"NO|R")) %>% 
-  mutate(TREATMENT = interaction(LENGTH,SHUFFLE))
+         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
 
 ### we do the same for the metapop sum model:
-RANEF_REPLICATE2<- ranef(mod, summary = FALSE)$METAPOP_ID2 %>%
+M_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID2 %>%
   array_tree(margin=c(1)) %>% ## convert array to list, enlisting by metapop nested in iteration
   tibble() %>% ## we "flatten" the list, iteration become rows of new tibble
-  rename(., ranef_rpl_metapop=".") %>% 
-  mutate(ranef_rpl_metapop = map(.x = ranef_rpl_metapop,
+  rename(., M_ranef_rpl=".") %>% 
+  mutate(M_ranef_rpl = map(.x = M_ranef_rpl,
                                      .f = ~ t(.x) %>% as.data.frame() %>% c())) %>% 
   mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
-  unnest_longer(ranef_rpl_metapop, indices_to = "METAPOP_ID") %>% 
+  unnest_longer(M_ranef_rpl, indices_to = "METAPOP_ID") %>% 
   mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
-         SHUFFLE=str_extract(METAPOP_ID,"NO|R")) %>% 
-  mutate(TREATMENT = interaction(LENGTH,SHUFFLE))
+         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
 
 ### now we need to extract the temporal variance-covariance matrices:
-GLOBAL_VCV_time <- VarCorr(mod, summary = FALSE)$WEEK2$cov %>% 
+P_vcv_time_global <- VarCorr(mod, summary = FALSE)$WEEK2$cov %>% 
       array_tree(margin=1) %>% 
       tibble() %>% 
-  rename(., vcv_global_latent=".") %>% 
+  rename(., P_vcv_time_latent_global=".") %>% 
   ### this is the VCV matrix including all the patches 
   ### so including the zero covs between the patchs from one metapop and the patch from another
   mutate(.iteration = 1:dim(.)[1])
 
-VCV_rpl_patch <- VarCorr(mod, summary = FALSE)$METAPOP_ID$cov %>% 
+P_vcv_rpl <- VarCorr(mod, summary = FALSE)$METAPOP_ID$cov %>% 
   array_tree(margin=1) %>% 
   tibble() %>% 
-  rename(., vcv_rpl_latent=".") %>% 
+  rename(., P_vcv_rpl_latent=".") %>% 
   mutate(.iteration = 1:dim(.)[1])
 
 
-
-VAR_time_metapop <- VarCorr(mod,summary=FALSE)$WEEK3$sd %>%
+M_var_time <- VarCorr(mod,summary=FALSE)$WEEK3$sd %>%
   as.data.frame() %>% 
   mutate(.iteration = 1:dim(.)[1]) %>% 
   pivot_longer(-.iteration) %>% 
-  mutate(latent_time_var_metapop = value^2) %>% 
+  mutate(M_var_time_latent = value^2) %>% 
   mutate(METAPOP_ID = str_remove(name,"METAPOPSUM_Intercept:METAPOP_ID2")) %>% 
-  select(METAPOP_ID,latent_time_var_metapop, .iteration) %>% 
+  select(METAPOP_ID, M_var_time_latent, .iteration) %>% 
   mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
-         SHUFFLE=str_extract(METAPOP_ID,"NO|R")) %>% 
-  mutate(TREATMENT = interaction(LENGTH,SHUFFLE)) 
+         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
 
-VAR_rpl_metapop <- VarCorr(mod,summary=FALSE)$METAPOP_ID2$sd %>% 
+M_var_rpl <- VarCorr(mod,summary=FALSE)$METAPOP_ID2$sd %>% 
   as.data.frame() %>% 
   mutate(.iteration = 1:dim(.)[1]) %>% 
-  mutate(latent_rpl_var_metapop = METAPOPSUM_Intercept^2) %>% 
-  select(.iteration,latent_rpl_var_metapop)
+  mutate(M_var_rpl_latent = METAPOPSUM_Intercept^2) %>% 
+  select(.iteration,M_var_rpl_latent)
 
 ### and we merge all these objects into one table:
 ### this will in addition help us split the global VCV matrix into one VCV matrix per metapop:
-tab <- RANEF_REPLICATE %>% 
-  left_join(RANEF_REPLICATE2) %>% 
-  left_join(VAR_time_metapop) %>%  
-  left_join(VAR_rpl_metapop) %>% 
-  left_join(FIXEF) %>% 
-  left_join(VCV_rpl_patch) %>% 
-  inner_join(GLOBAL_VCV_time, by = ".iteration") %>% 
-  mutate(vcv_metapop_latent = map2(
-    .x = vcv_global_latent, .y = METAPOP_ID,
+tab <- P_ranef_rpl %>% 
+  left_join(M_ranef_rpl) %>% 
+  left_join(M_var_time) %>%  
+  left_join(M_var_rpl) %>% 
+  left_join(P_M_fixef) %>% 
+  left_join(P_vcv_rpl) %>% 
+  inner_join(P_vcv_time_global, by = ".iteration") %>% 
+  mutate(P_vcv_time_latent = map2(
+    .x = P_vcv_time_latent_global, .y = METAPOP_ID,
     .f = ~.x %>% .[str_detect(colnames(.x),.y),str_detect(colnames(.x),.y)]
   )) %>% 
-  mutate(latent_intercepts = map2( ### I need to change the variables names
-    .x = fixef_patch, .y = ranef_rpl_patch, ##the latent metapop level intercept is the sum of the global mean + the metapop level ranef
+  mutate(P_latent_intercept = map2(
+    .x = P_fixef, .y = P_ranef_rpl,
     .f= function(.x,.y){.x + .y}
   ))
 
-###let's reorder the existing columns a bit, just to see better
+###let's reorder the existing columns a bit, just to see better (and remove the few we don't need anymore)
 
 tab <- tab %>% 
-  select(c(.iteration:TREATMENT, METAPOP_ID, 
-           fixef_patch, ranef_rpl_patch, latent_intercepts, vcv_rpl_latent, vcv_metapop_latent,
-           fixef_metapop, ranef_rpl_metapop, latent_rpl_var_metapop, latent_time_var_metapop)
+  select(c(.iteration,METAPOP_ID,LENGTH, SHUFFLE, 
+           P_fixef, P_ranef_rpl, P_latent_intercept, P_vcv_time_latent, P_vcv_rpl_latent,
+           M_fixef, M_ranef_rpl, M_var_time_latent, M_var_rpl_latent)
            )
 
 ### we can now start to calculate quantities of interest, replicate by replicate
@@ -105,23 +104,23 @@ tab <- tab %>%
 ### first, the predicted mean patch sizes:
 
 tab <- tab %>% 
-  mutate(total_vcv = map2(.x = vcv_rpl_latent, .y = vcv_metapop_latent,
+  mutate(P_vcv_total_latent = map2(.x = P_vcv_time_latent, .y = P_vcv_rpl_latent,
                           .f = function(.x,.y){.x+.y})) %>% 
-  mutate(patch_avgs = map2( ## patch by patch average
-    .x = latent_intercepts, .y = total_vcv,
+  mutate(P_pred = map2( ## patch by patch average
+    .x = P_fixef, .y = P_vcv_time_latent, # or vcv_total?
     .f = ~ exp(.x + diag(.y)/2)  ## analytic form for the Poisson model, see annex villemereuil
   )) %>% 
   ### we then average within metapops:
-  mutate(mean_patch = map(.x = patch_avgs, .f = ~mean(.x))) %>% 
-  mutate(mean_patch_corners = map(.x = patch_avgs, .f = ~mean(.x[c(1,3,7,9)]))) %>% 
-  mutate(mean_patch_center = map(.x = patch_avgs, .f = ~mean(.x[c(5)]))) %>% 
-  mutate(mean_patch_sides = map(.x = patch_avgs, .f = ~mean(.x[c(2,4,6,8)]))) %>% 
-  unnest(c(mean_patch, mean_patch_corners,mean_patch_center,mean_patch_sides)) 
+  mutate(P_mean_all = map(.x = P_pred, .f = ~mean(.x))) %>% 
+  mutate(P_mean_corners = map(.x = P_pred, .f = ~mean(.x[c(1,3,7,9)]))) %>% 
+  mutate(P_mean_center = map(.x = P_pred, .f = ~mean(.x[c(5)]))) %>% 
+  mutate(P_mean_sides = map(.x = P_pred, .f = ~mean(.x[c(2,4,6,8)]))) %>% 
+  unnest(c(P_mean_all, P_mean_corners,P_mean_center,P_mean_sides)) 
 
 ### then, the metapop-level predictions
 
 tab<- tab %>% 
-  mutate(mean_metapop = exp(fixef_metapop + (latent_rpl_var_metapop + latent_time_var_metapop)/2))
+  mutate(M_pred = exp(M_fixef + (M_var_rpl_latent + M_var_time_latent)/2))
 
 ### the next step is the estimation of the observed scale temporal VCV to estimate alpha, beta and gamma
 
@@ -130,32 +129,33 @@ tab<- tab %>%
 ### by chance all of our variables are from the same distribution, and an easy one, so we can do things manually:
 
 tab <- tab %>% 
-  mutate(psiM = map2(.x = latent_intercepts, .y = vcv_metapop_latent,
+  mutate(P_psi = map2(.x = P_latent_intercept, .y = P_vcv_time_latent,
                      .f = function(.x,.y){
-                       psiM <-NA
+                       psi <-NA
                        for (j in 1:9) {
-                         psiM[j] <- QGpsi(.x[j], .y[j, j], 
+                         psi[j] <- QGpsi(.x[j], .y[j, j], 
                                           d.link.inv = function(x) { exp(x)})
                        }
-                       diag(psiM)
+                       diag(psi)
                      }  
   )) %>% 
-  mutate(vcv_metapop_obs = map2(.x = psiM, .y= vcv_metapop_latent,
+  mutate(P_vcv_time_obs = map2(.x = P_psi, .y= P_vcv_time_latent,
                                 .f = ~ (.x %*% .y %*% t(.x))
   ))
 
 tab <- tab %>% 
-  mutate(
-    alpha = map2(.x = vcv_metapop_obs, .y = patch_avgs, .f = ~.x %>% alpha_wang_loreau(varcorr=., means = .y)),
-    gamma = map2(.x = vcv_metapop_obs, .y = patch_avgs, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = .y))
+  mutate(   ##very important !! go up to check the right components are in the P_pred above
+    ## if not, duplicate the column and include the right ones
+    P_alpha = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% alpha_wang_loreau(varcorr=., means = .y)),
+    P_gamma = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = .y))
   ) %>% 
-  unnest(cols=c(alpha,gamma)) %>% 
+  unnest(cols=c(P_alpha,P_gamma)) %>% 
   mutate(
-    beta1 = alpha / gamma, beta2 = alpha - gamma
+    P_beta1 = P_alpha / P_gamma, P_beta2 = P_alpha - P_gamma
   )
 
-tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(mean_patch)) %>% 
-  ggplot()+stat_halfeye(aes(x=mean,y=factor(LENGTH)))+ scale_x_log10()+ facet_wrap(~SHUFFLE)
+tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_pred)) %>% 
+  ggplot()+stat_halfeye(aes(x=mean,y=factor(LENGTH)))+ facet_wrap(~SHUFFLE)
 
 
 
