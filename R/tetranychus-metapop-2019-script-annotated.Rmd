@@ -24,16 +24,16 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
 
 (see manuscript/preprint text for more context)
 
-This script analyses data resulting from the study of experimental metapopulations of spider mites *Tetranychus urticae*. Each metapopulation was composed of 9 patches connected by bridges of various lengths. Abundances of adult females were tracked weekly in each patch of each metapopulation. We are interested in the effect of bridge length and randomization treatment (see text) on (meta)population size and various variability metrics. 
+This script analyses data resulting from the study of experimental metapopulations of spider mites *Tetranychus urticae*. Each replicate metapopulation was composed of 9 patches connected by bridges; the bridge length varied between replicates. Abundances of adult females were tracked weekly in each patch of each metapopulation. We are interested in the effect of bridge length and randomization treatment (see text) on (meta)population size and various variability metrics. 
 
-This script relies heavily on de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] (for converting latent-scale variance-covariance matrices to observed scale) and Wang and Loreau [@wangEcosystemStabilitySpace2014](for the principle and formula of $\alpha$, $\beta$, $\gamma$ variability in metapopulations). Everything below assumes the user has read these two papers.
+This script relies heavily on de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] (for converting latent means and variance-covariance matrices to data/observed scale) and Wang and Loreau [@wangEcosystemStabilitySpace2014](for the principle and formula of $\alpha$, $\beta$, $\gamma$ variability in metapopulations). Everything below assumes the reader has read these two papers.
 
 # Part 1 : Preparation
 
 ## 1A - packages
 
 First, we’re going to load all the packages we need. This includes the `tidyverse` packages [@wickhamWelcomeTidyverse2019], for data wrangling at the beginning and summarising/plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results.
-This script uses the Stan language [@carpenterStanProbabilisticProgramming2017; @standevelopmentteamRStanInterfaceStan2018] for model fitting.  The `RStan` package containing Stan has a non-standard installation process, please check online: https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started . The `brms` package [@burknerBrmsPackageBayesian2017] allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The `QGglmm` package by de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.
+This script uses the Stan language [@carpenterStanProbabilisticProgramming2017; @standevelopmentteamRStanInterfaceStan2018] for model fitting (we can use the `rstan` or the `cmdstanr` implementation; see https://mc-stan.org/ for how to install them). The `brms` package [@burknerBrmsPackageBayesian2017] allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The `QGglmm` package by de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.
 
 ```{r packages-loading}
 library(rstan) ## Stan backend
@@ -45,7 +45,7 @@ library(bayesplot)
 library(tidybayes)
 library(matrixStats)
 
-library(QGglmm) ## this package is needed to convert variance-covariance matrices from latent to data scale
+library(QGglmm) ## this package is needed to help convert variance-covariance matrices from latent to data scale
 
 library(patchwork)
 
@@ -53,14 +53,15 @@ library(here)
 
 ## some useful default settings
 rstan_options(auto_write = TRUE) #for rstan
-options(mc.cores = 2) ## if this slows your computer down too much, reduce ; if you have > 4 cores, you can increase
+options(mc.cores = 2) ## reduce/increase depending on cores available
 N_chains <- 4
-N_warmup <- 200   ## used for publication: 10000 ## 500 is enough for tests
-N_iter <- N_warmup + 200  ## recommended for publication-level quality: N_warmup + at least 2000  ## Nwarmup + 500 is enough for tests
+N_warmup <- 4000   ## used for publication: 10000 ## 200 is enough for tests
+N_iter <- N_warmup + 2000  ## recommended for publication-level quality: N_warmup + at least 2000  
+## Nwarmup + 200 is probably good enough for tests
 
 ```
-
-**Note:** The finished model will be over 1Gb (probably over 2Gb), and so post-processing operations may not be doable on some computers in the current, non-optimized, state of the code.(In some cases, fitting the model may not even be possible, optimization or not!!) If this is the case, we invite you to try a model with a much smaller `N_warmup` and number of iterations post-warmup (see comments in code chunk above). It should be close enough to convergence, despite warnings, to allow you to get a general idea of the results.
+k
+**Note:** The finished model object will likely be large (at least several 100s Mb) and take some time to fit (a few hours to half a day on the few laptops it has been tested on). If this causes problems, we invite you to try a model with a much smaller `N_warmup` and number of iterations post-warmup (see comments in code chunk above). It should be close enough to convergence, despite warnings, to allow you to get a general idea of the results.
 
 
 ## 1B – data loading and wrangling
@@ -72,11 +73,11 @@ raw_data <- read_csv(here("data","tetranychus-metapop-2019-dataset.csv"))
 The variables in `raw_data` are as follow:
 
 - `METAPOP_ID`: unique ID for each replicate metapopulation
-- `LENGTH`: length of bridges between patches in the metapopulation (4,8, or 16 cm)
+- `LENGTH`: length of bridges between patches in the metapopulation (4, 8, or 16 cm)
 - `SHUFFLE`: within-metapopulation reshuffling treatment. NO: control, no reshuffling, R: reshuffling
 - `REPLICATE`: replicate metapopulation number within a treatment set. The `METAPOP_ID` string corresponds to "`LENGTH` _ `SHUFFLE` _ `REPLICATE`"
 - `PATCH`: Patch location in the 3 by 3 metapopulation (written as "row.column")
-- `WEEK`: weeks since the start of data collection (first week coded as 1)
+- `WEEK`: weeks of data collection (first week coded as 1)
 - `AFEMA`: number of adult females counted on patch, our measure of abundance
 
 In the raw dataset, data are stored so that there is one column for all population sizes, and a column saying which patch it belongs to. This is a tidy way to store info, but not adequate for what we want to do. To fit our multivariate model, we need one column per patch position instead:
@@ -225,7 +226,7 @@ N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
 
 where $\alpha$ are treatment-specific latent patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\gamma$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}$ the correlation matrices.
 
-You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything in the end, but given the non-linearities everywhere in a GLMM, it is probably best to calculate everything replicate by replicate and only average the final results (we'll come back to these non-linearities later). It is important to note that it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
+You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, it is probably best for the variabilities to calculate everything replicate by replicate first and only average later (we'll come back to these non-linearities later). It is important to note that it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
 
 Similarly, we can write a (simpler) model for the total metapopulation size $M$ (the `METAPOPSUM` column):
 
@@ -243,7 +244,7 @@ $$
 
 ## 2B - Implementation - formulas
 
-This is implemented in R as follow. First, we need to create a `TREATMENT` variable combining `LENGTH` and `SHUFFLE`. We're also going to create some duplicate columns, just so that the random effects from the patch-by-patch model and from the "all-metapop" model don't end up in the same objects (it complicates postprocessing):
+This is implemented in R as follow. First, we need to create a `TREATMENT` variable combining `LENGTH` and `SHUFFLE`. We're also going to create some duplicate columns, just so that the random effects from the patch-by-patch model and from the "all-metapop" model don't end up in the same slots of the fitted model object (it complicates postprocessing otherwise):
 
 ```{r treatment-create}
 data <- data %>% 
@@ -313,12 +314,13 @@ mod <- brm(metapopformula, data = data,
            iter = N_iter, warmup = N_warmup, chains = N_chains, 
            prior = prior, 
            seed = 42,
-           control = list(adapt_delta = 0.8),
+           control = list(adapt_delta = 0.8), #default; adapt_delta and other controls can be adjusted if needed
            backend= "rstan")
 
 ##with rstan as backend, the model *may* throw some some rhats=NA warnings on exit
 ## they can (for once) be safely ignored: related issue: https://github.com/paul-buerkner/brms/issues/865
-## these warnings don't pop up when cmdstanr is used as backend (other "normal" warnings will appear with both backends)
+## these warnings don't pop up when cmdstanr is used as backend 
+## (other "normal" warnings will appear if needed (e.g during a test run with low iters) with both backends)
 ## or when doing summary(mod)
 ## you can check that only parameters that should be constant give NA warnings through rhat(mod)
 ## and quickly look at the rhats:
@@ -327,7 +329,7 @@ save(list="mod", file=here("R_output","model.Rdata"))
 }
 ```
 
-Note that it can take some time to finish (around 2000-4000 iterations/h/core in my laptop).
+Note that it can take some time to finish (around 2000-4000 iterations/h/core on my laptop).
 
 ```{r model_summary}
 summary(mod)  #look at Rhat and ESS both tail and bulk

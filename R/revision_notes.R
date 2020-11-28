@@ -1,8 +1,8 @@
 
-## columns prefixed by P_ refer to the patch-level model
+## columns prefixed by P_ refer to the patch by patch model
 ## by M_ to the metapop-level model
-## rpl something related to the among replicates variation
-##time to the temporal variance
+## rpl something related to the among-replicates level of variation
+## time to the within-replicate (temporal) level of variation
 
 ### we first extract all the fixed effects:
 P_M_fixef <- fixef(mod, summary = FALSE) %>% ### all model fixed effects, with one column = one "variable" * treatment combination
@@ -99,6 +99,9 @@ tab <- tab %>%
            M_fixef, M_ranef_rpl, M_var_time_latent, M_var_rpl_latent)
            )
 
+### avging by treatment the temporal VCVs before exponentiating: may be better behaviour for displaying the mean N prediction
+### NB: avging before or after doesn't change qualitative conclusions
+
 tab2<-tab %>% 
   group_by(LENGTH,SHUFFLE,.iteration) %>% 
   select(P_vcv_time_latent) %>% 
@@ -121,6 +124,10 @@ tab <- tab %>%
                           .f = function(.x,.y){.x+.y})) %>% 
   mutate(P_pred = map2( ## patch by patch average
     .x = P_fixef, .y = P_vcv_time_latent_mean, # or vcv_total? or vcv_time_latent, or vcv_time_latent_mean...?
+    .f = ~ exp(.x + diag(.y)/2)  ## analytic form for the Poisson model, see annex villemereuil
+  )) %>% 
+  mutate(P_pred_for_var = map2( ## patch by patch mean, not averaged over anything else, needed for alpha/beta/gamma vars
+    .x = P_latent_intercept, .y = P_vcv_time_latent,
     .f = ~ exp(.x + diag(.y)/2)  ## analytic form for the Poisson model, see annex villemereuil
   )) %>% 
   ### we then average within metapops:
@@ -159,8 +166,8 @@ tab <- tab %>%
 tab <- tab %>% 
   mutate(   ##very important !! go up to check the right components are in the P_pred above
     ## if not, duplicate the column and include the right ones
-    P_alpha = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% alpha_wang_loreau(varcorr=., means = .y)),
-    P_gamma = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = .y))
+    P_alpha = map2(.x = P_vcv_time_obs, .y = P_pred_for_var, .f = ~.x %>% alpha_wang_loreau(varcorr=., means = .y)),
+    P_gamma = map2(.x = P_vcv_time_obs, .y = P_pred_for_var, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = .y))
   ) %>% 
   unnest(cols=c(P_alpha,P_gamma)) %>% 
   mutate(
@@ -170,48 +177,34 @@ tab <- tab %>%
 
 obssummary <- data %>% 
   pivot_longer(P11:P33) %>% 
-  group_by(SHUFFLE,LENGTH,METAPOP_ID,name) %>% 
+  group_by(SHUFFLE,LENGTH,METAPOP_ID,name) %>% ##what's the most relevat/correct avging for display?
   summarise(P_mean=mean(value), P_se=plotrix::std.error(value),P_median = median(value),
             M_mean=mean(METAPOPSUM),M_se=plotrix::std.error(METAPOPSUM))
 
 tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_mean_all)) %>% 
   ggplot()+
-  stat_halfeye(aes(x=mean,y=factor(LENGTH)),.width=c(0.01,0.95),normalize="xy")+
+  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)+0.05),
+               orientation="horizontal",.width=c(0.01,0.95))+
   geom_pointinterval(
     data = obssummary, 
-    aes(x=P_mean, xmin=P_mean-P_se,xmax=P_mean+P_se,y=factor(LENGTH)), col="grey40",alpha=0.5, position=position_jitter(height=0.2))+
-  scale_x_continuous("mean population size")+
-  scale_y_discrete("bridge length (cm)")+
+    aes(x=P_mean, xmin=P_mean-P_se,xmax=P_mean+P_se,y=log(LENGTH,base=4)-0.05), 
+    col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
+  scale_x_continuous("mean patch population size (adult females)")+
+  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
   facet_wrap(~SHUFFLE)+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 
-tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_pred)) %>% 
+
+tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_beta1)) %>% 
   ggplot()+
-  stat_halfeye(aes(x=mean,y=factor(LENGTH)),.width=c(0.01,0.95),normalize="xy")+
-  geom_pointinterval(
-    data = obssummary %>% select(LENGTH,SHUFFLE,M_mean,M_se) %>% distinct(), 
-    aes(x=M_mean, xmin=M_mean-M_se,xmax=M_mean+M_se,y=factor(LENGTH)), col="grey40", position=position_jitter(height=0.2))+
-  scale_x_continuous("mean metapopulation size")+
-  scale_y_discrete("bridge length (cm)")+
+  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)),
+               orientation="horizontal",.width=c(0.01,0.95))+
+  scale_x_continuous(expression(paste("mean ", alpha, " variability")))+
+  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
   facet_wrap(~SHUFFLE)+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-
-####very crude for medians;; need to triple-check
-tab %>% mutate(P_fixef = map(.x=P_fixef,.f=~.x %>% mean())) %>% unnest(P_fixef) %>% 
-  group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(exp(P_fixef))) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=factor(LENGTH)),.width=c(0.01,0.95),normalize="xy")+
-  geom_point(
-    data = obssummary, 
-    aes(x=P_median,y=factor(LENGTH)), col="grey40",alpha=0.5, position=position_jitter(height=0.2))+
-  scale_x_continuous("median population size")+
-  scale_y_discrete("bridge length (cm)")+
-  facet_wrap(~SHUFFLE)+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-
 
 ### the problem is the non-linear effects caused by ignoring or not random effects
 ### as said in villemereuil 2018, the approach above is the only one that recover the correct mean
@@ -251,3 +244,22 @@ mean(exp(fx_c)); EnvStats::geoMean(exp(fx_c))
 ### correct based on arithmetic means
 
 ### naive use of model coefs gives geometric means of patches
+
+
+## some note on how mean metapop can differ from sum of mean(pop) due to synchrony
+## let's imagine two patches x y each sampled 1000 times with a lognormal biomass
+x=rlnorm(1000,0,0.5);y=rlnorm(1000,0,0.5)
+##here is the distribution of the sum if the patches are independent
+fitdistrplus::fitdist(((x)+(y)),"lnorm")
+
+## let's use sort() to mimic what happens if they are + correlated
+fitdistrplus::fitdist((sort(x)+sort(y)),"lnorm")
+
+## with rev if they are - correlated
+
+fitdistrplus::fitdist((sort(x)+rev(sort(y))),"lnorm")
+
+##the mean decreases when patches become positively correlated
+
+
+
