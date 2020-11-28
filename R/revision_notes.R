@@ -231,8 +231,8 @@ tab %>% select(SHUFFLE,LENGTH, METAPOP_ID, M_alpha) %>%
   #geom_segment(aes(x=M_alpha,xend=M_alpha,y=low_P_gamma,yend=high_P_gamma),col="grey")+
   #geom_segment(aes(x=low_M_alpha,xend=high_M_alpha,y=P_gamma,yend=P_gamma),col="grey")+
   geom_point(aes(x=M_alpha,y =P_gamma))+
-  #scale_x_log10()+
-  #scale_y_log10()+
+  scale_x_continuous(expression(paste("metapopulation-level ", alpha)))+
+  scale_y_continuous(expression(paste("patch-level ", gamma)))+
   geom_abline(intercept=0,slope=1)
 
 
