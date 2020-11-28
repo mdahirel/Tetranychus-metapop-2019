@@ -140,7 +140,15 @@ tab <- tab %>%
 ### then, the metapop-level predictions
 
 tab<- tab %>% 
-  mutate(M_pred = exp(M_fixef + (M_var_rpl_latent + M_var_time_latent)/2))
+  mutate(M_pred = exp(M_fixef + (M_var_rpl_latent + M_var_time_latent)/2)) %>% 
+  mutate(M_latent_intercept = M_fixef + M_ranef_rpl) %>% 
+  mutate(M_alpha = map2(.x = M_latent_intercept, .y = M_var_time_latent,
+                        .f = function(.x,.y){
+                          M_obscale = QGparams(mu=.x, var.a = .y, var.p = .y, model="Poisson.log", verbose=FALSE)
+                          CV_L = sqrt(M_obscale$var.a.obs)/M_obscale$mean.obs
+                          return(CV_L^2)
+                          })) %>% 
+  unnest(M_alpha)
 
 ### the next step is the estimation of the observed scale temporal VCV to estimate alpha, beta and gamma
 
@@ -205,6 +213,28 @@ tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_beta1))
   facet_wrap(~SHUFFLE)+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+
+### quick check that alpha beta gamma make sense:
+### normally, the alpha at the metapop level should be the gamma of the patch level
+
+test1<-tab %>% select(SHUFFLE,LENGTH, METAPOP_ID, P_gamma) %>% 
+  group_by(SHUFFLE,LENGTH,METAPOP_ID) %>% 
+  mean_qi(P_gamma) %>% 
+  rename(low_P_gamma=.lower,high_P_gamma=.upper)
+
+tab %>% select(SHUFFLE,LENGTH, METAPOP_ID, M_alpha) %>% 
+  group_by(SHUFFLE,LENGTH,METAPOP_ID) %>% 
+  mean_qi(M_alpha) %>% 
+  rename(low_M_alpha=.lower,high_M_alpha=.upper) %>% 
+  left_join(test1) %>% 
+  ggplot()+
+  #geom_segment(aes(x=M_alpha,xend=M_alpha,y=low_P_gamma,yend=high_P_gamma),col="grey")+
+  #geom_segment(aes(x=low_M_alpha,xend=high_M_alpha,y=P_gamma,yend=P_gamma),col="grey")+
+  geom_point(aes(x=M_alpha,y =P_gamma))+
+  #scale_x_log10()+
+  #scale_y_log10()+
+  geom_abline(intercept=0,slope=1)
+
 
 ### the problem is the non-linear effects caused by ignoring or not random effects
 ### as said in villemereuil 2018, the approach above is the only one that recover the correct mean
