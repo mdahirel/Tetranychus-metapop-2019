@@ -56,7 +56,7 @@ rstan_options(auto_write = TRUE) #for rstan
 options(mc.cores = 2) ## reduce/increase depending on cores available
 N_chains <- 4
 N_warmup <- 4000   ## used for publication: 10000 ## 200 is enough for tests
-N_iter <- N_warmup + 2000  ## recommended for publication-level quality: N_warmup + at least 2000  
+N_iter <- N_warmup + 3000  ## recommended for publication-level quality: at least 2000-4000 iterations post warmup when all chains combined 
 ## Nwarmup + 200 is probably good enough for tests
 
 ```
@@ -314,7 +314,7 @@ mod <- brm(metapopformula, data = data,
            iter = N_iter, warmup = N_warmup, chains = N_chains, 
            prior = prior, 
            seed = 42,
-           control = list(adapt_delta = 0.8), #default; adapt_delta and other controls can be adjusted if needed
+           control = list(adapt_delta = 0.9), #default is 0.8; adapt_delta and other controls can be adjusted if needed
            backend= "rstan")
 
 ##with rstan as backend, the model *may* throw some some rhats=NA warnings on exit

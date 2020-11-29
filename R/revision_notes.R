@@ -29,6 +29,28 @@ P_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID %>%
   mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
          SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
 
+
+### now we need to extract the temporal variance-covariance matrices:
+memory.limit(20000) #### if needed, a little memory boost may be needed to handle the full vcv matrix in final model
+P_vcv_time_global <- VarCorr(mod, summary = FALSE)$WEEK2$cov
+
+P_vcv_time_latent<-P_ranef_rpl %>% 
+  select(.iteration,METAPOP_ID) %>% 
+  mutate(P_vcv_time_latent=map2(.x=.iteration,.y=METAPOP_ID,
+                                .f=function(iter=.x,metapop=.y,source=P_vcv_time_global){
+                                  include <- colnames(source)
+                                  include <- include[str_detect(include, pattern = metapop)]
+                                  return(source[iter,include,include])
+                                }))
+
+rm(P_vcv_time_global);gc() ##we remove the big global VCV from memory since we don't need it anymore
+
+P_vcv_rpl <- VarCorr(mod, summary = FALSE)$METAPOP_ID$cov %>% 
+  array_tree(margin=1) %>% 
+  tibble() %>% 
+  rename(., P_vcv_rpl_latent=".") %>% 
+  mutate(.iteration = 1:dim(.)[1])
+
 ### we do the same for the metapop sum model:
 M_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID2 %>%
   array_tree(margin=c(1)) %>% ## convert array to list, enlisting by metapop nested in iteration
@@ -40,21 +62,6 @@ M_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID2 %>%
   unnest_longer(M_ranef_rpl, indices_to = "METAPOP_ID") %>% 
   mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
          SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
-
-### now we need to extract the temporal variance-covariance matrices:
-P_vcv_time_global <- VarCorr(mod, summary = FALSE)$WEEK2$cov %>% 
-      array_tree(margin=1) %>% 
-      tibble() %>% 
-  rename(., P_vcv_time_latent_global=".") %>% 
-  ### this is the VCV matrix including all the patches 
-  ### so including the zero covs between the patchs from one metapop and the patch from another
-  mutate(.iteration = 1:dim(.)[1])
-
-P_vcv_rpl <- VarCorr(mod, summary = FALSE)$METAPOP_ID$cov %>% 
-  array_tree(margin=1) %>% 
-  tibble() %>% 
-  rename(., P_vcv_rpl_latent=".") %>% 
-  mutate(.iteration = 1:dim(.)[1])
 
 
 M_var_time <- VarCorr(mod,summary=FALSE)$WEEK3$sd %>%
@@ -76,22 +83,20 @@ M_var_rpl <- VarCorr(mod,summary=FALSE)$METAPOP_ID2$sd %>%
 ### and we merge all these objects into one table:
 ### this will in addition help us split the global VCV matrix into one VCV matrix per metapop:
 tab <- P_ranef_rpl %>% 
-  left_join(M_ranef_rpl) %>% 
-  left_join(M_var_time) %>%  
-  left_join(M_var_rpl) %>% 
-  left_join(P_M_fixef) %>% 
   left_join(P_vcv_rpl) %>% 
-  inner_join(P_vcv_time_global, by = ".iteration") %>% 
-  mutate(P_vcv_time_latent = map2(
-    .x = P_vcv_time_latent_global, .y = METAPOP_ID,
-    .f = ~.x %>% .[str_detect(colnames(.x),.y),str_detect(colnames(.x),.y)]
-  )) %>% 
+  left_join(P_vcv_time_latent) %>% 
+  left_join(M_ranef_rpl) %>% 
+  left_join(M_var_rpl) %>% 
+  left_join(M_var_time) %>%  
+  left_join(P_M_fixef) %>% 
   mutate(P_latent_intercept = map2(
     .x = P_fixef, .y = P_ranef_rpl,
     .f= function(.x,.y){.x + .y}
   ))
 
-###let's reorder the existing columns a bit, just to see better (and remove the few we don't need anymore)
+
+
+###let's reorder the existing columns a bit, just to see better
 
 tab <- tab %>% 
   select(c(.iteration,METAPOP_ID,LENGTH, SHUFFLE, 
@@ -204,7 +209,7 @@ tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_mean_al
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 
 
-tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_beta1)) %>% 
+tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_alpha)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)),
                orientation="horizontal",.width=c(0.01,0.95))+
