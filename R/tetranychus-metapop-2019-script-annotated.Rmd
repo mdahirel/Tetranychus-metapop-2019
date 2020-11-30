@@ -612,6 +612,28 @@ P_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_m
   theme(legend.position = "none")
 ```
 
+```{r P_plot-local}
+P_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% 
+  summarise(mean_corners = mean(P_mean_corners), 
+            mean_sides = mean(P_mean_sides),
+            mean_center = mean(P_mean_center)) %>% 
+  pivot_longer(mean_corners:mean_center) %>%
+  mutate(local_connectedness = fct_recode(factor(name),
+                                          `center (8 links)` = "mean_center", 
+                                          `side (5 links)` = "mean_sides", 
+                                          `corner (3 links)`="mean_corners")) %>% 
+  ggplot()+
+  stat_halfeye(aes(x=value,y=log(LENGTH,base=4)+0.05, fill=local_connectedness),
+               orientation="horizontal",.width=c(0.01,0.95),alpha= 0.5)+
+  scale_fill_manual(values=paletteLOCAL)+
+  scale_x_continuous("mean patch population size (adult females)")+
+  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
+  facet_grid(rows=vars(SHUFFLE))+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") 
+```
+
+
 ## metapopulation means
 
 ```{r M_plot}
