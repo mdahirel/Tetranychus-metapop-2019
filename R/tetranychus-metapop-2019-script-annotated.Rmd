@@ -345,7 +345,143 @@ pp_check(mod, resp = "P11", nsamples = 20)
 
 # Part 3 - Extracting key metrics from model output
 
-Once, we have fitted and chosen a model, it's time to extract what we need from it. In the next code chunk, I've made a function that takes a `brms` model as input and give all metrics we need as output (it only works correctly on one of the models that can be specified via the script above, of course).
+Once, we have fitted and chosen a model, it's time to extract what we need from it. 
+
+There's going to be a lot of variables, so we're gonna try to follow this naming convention to keep things clear:
+
+- columns or objects prefixed by `P_` refer to the patch by patch model
+- ...prefixed by `M_` to the metapop-level model
+- names containing `rpl` are for things related to the among-replicates level of variation
+- names with `time` for the within-replicate (temporal) level of variation
+
+With that out of the way, let's start by extracting all the fixed effects:
+
+```{r P_M_extract-fixef}
+P_M_fixef <- fixef(mod, summary = FALSE) %>% ### all model fixed effects, with one column = one "variable" * treatment combination
+  as_tibble() %>%
+  mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
+  pivot_longer(-.iteration) %>%        ### we pivot so we can split the "variable*treatment" into patch ID and treatment variables
+  mutate(variable=str_extract(name,"P11|P12|P13|P21|P22|P23|P31|P32|P33|METAPOPSUM"),
+         LENGTH=as.numeric(str_extract(name,"4|8|16")),
+         SHUFFLE=str_extract(name,"NO$|R$")) %>%  # $ : end of string
+  select(-name) %>%
+  pivot_wider(values_from=value,names_from=variable) %>%  ###we repivot back so that 1 column per patch
+  group_by(.iteration, LENGTH, SHUFFLE) %>%  ### we group and nest by iteration (with treatment variables along for the ride)
+  nest(P_fixef = c(P11:P33)) %>% 
+  mutate(P_fixef = map(.x=P_fixef, .f = ~.x %>% unlist())) %>%   #convert list column from tibbles to vectors for faster calculations
+  rename(M_fixef = METAPOPSUM)
+```
+
+We end up with a tibble where one row = one posterior iteration of one replicate metapopulation. Where there are more than one value per row per "thing" of interest (like with patch-level fixed effects: 9 patches), we use list-columns to store them.
+
+Let's continue with the among-metapopulation random effects (not the variances):
+
+```{r P_extract-ranef-rpl}
+### we then extract the among-metapop deviations for the patch by patch model (needed for estimating alpha beta gamma):
+P_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID %>% 
+  array_tree(margin=c(1,2)) %>% ## convert array to list, enlisting by metapop nested in iteration
+  tibble() %>% ## we "flatten" the list, iteration become rows of new tibble
+  rename(., P_ranef_rpl=".") %>% 
+  mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
+  unnest_longer(P_ranef_rpl, indices_to = "METAPOP_ID") %>% 
+  mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
+         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
+```
+
+and the actual among-metapopulation variances (converted to VCV matrix format):
+
+```{r P_extract-vcv-rpl}
+P_vcv_rpl <- VarCorr(mod, summary = FALSE)$METAPOP_ID$sd %>% 
+  array_tree(margin=1) %>% 
+  tibble() %>% 
+  rename(., P_vcv_rpl_latent=".") %>% 
+  mutate(.iteration = 1:dim(.)[1]) %>% 
+  mutate(P_vcv_rpl_latent=map(.x=P_vcv_rpl_latent,
+                       .f=function(.x){diag(.x^2)}))
+```
+
+
+Last thing for the patch level, we need to extract the temporal variance-covariance matrices. We need to do this in two steps. First, we extract the content of the VCV slot:
+
+```{r P_extract-vcv-time1}
+memory.limit(40000) #### if needed, a little memory boost to handle the full vcv matrix in final model
+P_vcv_time_global <- VarCorr(mod, summary = FALSE)$WEEKrpl$cov
+```
+
+Because of the way the model is structured, **all** the variances-covariances that involve `WEEKrpl` are stored in one big matrix, which include across replicate correlations (like patch 1.1 of replicate 1 to patch 1.2 of replicate , for instance _ these are of course 0). We need to split into its replicate components:
+
+```{r P_extract-vcv-time2}
+P_vcv_time_latent<-P_ranef_rpl %>% 
+  select(.iteration,METAPOP_ID) %>% 
+  mutate(P_vcv_time_latent=map2(.x=.iteration,.y=METAPOP_ID,
+                                .f=function(iter=.x,metapop=.y,source=P_vcv_time_global){
+                                  include <- colnames(source)
+                                  include <- include[str_detect(include, pattern = metapop)]
+                                  return(source[iter,include,include])
+                                }))
+
+rm(P_vcv_time_global);gc() ##we remove the big global VCV from memory since we don't need it anymore
+
+```
+
+
+Now we can move to extracting things from the metapopulation size model, where things are a bit simpler.
+
+First the among-replicate random effects:
+```{r M_extract-ranef-rpl}
+### we do the same for the metapop sum model:
+M_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID2 %>%
+  array_tree(margin=c(1)) %>% ## convert array to list, enlisting by metapop nested in iteration
+  tibble() %>% ## we "flatten" the list, iteration become rows of new tibble
+  rename(., M_ranef_rpl=".") %>% 
+  mutate(M_ranef_rpl = map(.x = M_ranef_rpl,
+                                     .f = ~ t(.x) %>% as.data.frame() %>% c())) %>% 
+  mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
+  unnest_longer(M_ranef_rpl, indices_to = "METAPOP_ID") %>% 
+  mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
+         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
+```
+
+Then the among-replicate variance:
+```{r M_extract-var-rpl}
+M_var_rpl <- VarCorr(mod,summary=FALSE)$METAPOP_ID2$sd %>% 
+  as.data.frame() %>% 
+  mutate(.iteration = 1:dim(.)[1]) %>% 
+  mutate(M_var_rpl_latent = METAPOPSUM_Intercept^2) %>% 
+  select(.iteration,M_var_rpl_latent)
+```
+
+And the replicate by replicate temporal variances:
+
+```{r M_extract-var-time}
+M_var_time <- VarCorr(mod,summary=FALSE)$WEEKrpl2$sd %>%
+  as.data.frame() %>% 
+  mutate(.iteration = 1:dim(.)[1]) %>% 
+  pivot_longer(-.iteration) %>% 
+  mutate(M_var_time_latent = value^2) %>% 
+  mutate(METAPOP_ID = str_remove(name,"METAPOPSUM_Intercept:METAPOP_ID2")) %>% 
+  select(METAPOP_ID, M_var_time_latent, .iteration) %>% 
+  mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
+         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
+```
+
+
+Now we can merge all of this in one table (still with "one row = one iteration for one replicate metapop"):
+
+```{r merge-coefficients-tables}
+tab <- P_ranef_rpl %>% 
+  left_join(P_vcv_rpl) %>% 
+  left_join(P_vcv_time_latent) %>% 
+  left_join(M_ranef_rpl) %>% 
+  left_join(M_var_rpl) %>% 
+  left_join(M_var_time) %>%  
+  left_join(P_M_fixef)
+```
+
+
+
+
+In the next code chunk, I've made a function that takes a `brms` model as input and give all metrics we need as output (it only works correctly on one of the models that can be specified via the script above, of course).
 
 The function is *far* from optimized in terms of time or memory use (and I would probably have a look if I had time, e.g. move from `for` loops to `purr`), but it works so <shrug>.
 
