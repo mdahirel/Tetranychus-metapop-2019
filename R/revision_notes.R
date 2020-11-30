@@ -1,8 +1,24 @@
+test_obs<-data %>% pivot_longer(P11:P33) %>% 
+  group_by(SHUFFLE,LENGTH,METAPOP_ID,name) %>% 
+  summarise(mean_obs=mean(value))
 
-test_fit %>% group_by(METAPOP_ID,SHUFFLE,LENGTH,name) %>% summarise(mean_hdi(mean)) %>% left_join(test_obs) %>% ggplot()+geom_boxplot(aes(x=interaction(SHUFFLE,LENGTH),y=y/mean_obs))
+test_fit <- tab %>% select(SHUFFLE,METAPOP_ID,LENGTH, P_pred) %>% 
+  mutate(P_pred = map(.x=P_pred,.f=~.x %>% t() %>% as_tibble)) %>% 
+  unnest(P_pred) %>% 
+  pivot_longer(P11:P33)
+
+test_fit %>% group_by(METAPOP_ID,SHUFFLE,LENGTH,name) %>% 
+  summarise(mean_hdi(value)) %>% 
+  mutate(local_connectedness = 1 + 1*(name %in% c("P12","P21","P23","P32"))+ 2*(name %in% c("P11","P13","P31","P33"))) %>% 
+  mutate(local_connectedness = fct_recode(factor(local_connectedness),
+                                          `center (8 links)` = "1", 
+                                          `side (5 links)` = "2", 
+                                          `corner (3 links)`="3")) %>% 
+  left_join(test_obs) %>% ggplot()+
+    geom_boxplot(aes(x=interaction(SHUFFLE,LENGTH),y=y/mean_obs))+
+    facet_wrap(~local_connectedness)
 
 
-test_obs<-data %>% pivot_longer(P11:P33) %>% group_by(SHUFFLE,LENGTH,METAPOP_ID,name) %>% summarise(mean_obs=mean(value))
 
 test_fit %>% group_by(METAPOP_ID,SHUFFLE,LENGTH,name) %>% 
   summarise(mean_hdi(mean)) %>% 
