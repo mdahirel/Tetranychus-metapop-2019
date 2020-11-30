@@ -343,9 +343,11 @@ pp_check(mod, resp = "P11", nsamples = 20)
 ## in a multivariate model, you need to specify the response (so here which patch)
 ```
 
-# Part 3 - Extracting key metrics from model output
+# Part 3 - Obtaining key metrics from model output
 
-Once, we have fitted and chosen a model, it's time to extract what we need from it. 
+## Extraction
+
+Once we have fitted and chosen a model, it's time to extract what we need from it. 
 
 There's going to be a lot of variables, so we're gonna try to follow this naming convention to keep things clear:
 
@@ -478,161 +480,98 @@ tab <- P_ranef_rpl %>%
   left_join(P_M_fixef)
 ```
 
+## Estimation of key quantities
 
+We first use information on patch-level fixed effects and patch-level temporal variances to estimate data-scale patch-level means. Because we allow within-patch variance to vary among replicates (and so among treatments), we can't infer anything about *mean* differences among treatments from fixed effects only, as the data-scale mean depends on both latent mean and latent within-patch variance [see @villemereuilGeneralMethodsEvolutionary2016]. We need to first estimate patch means from latent means and variances, and then average across patches within replicates:
 
-
-In the next code chunk, I've made a function that takes a `brms` model as input and give all metrics we need as output (it only works correctly on one of the models that can be specified via the script above, of course).
-
-The function is *far* from optimized in terms of time or memory use (and I would probably have a look if I had time, e.g. move from `for` loops to `purr`), but it works so <shrug>.
-
-In some places in the function you will see 3-dimensional arrays called. This is going to be the typical structure of many parts of a multivariate model fitted by `brms`:
-
-model_part[X,Y,Z],
-X = posterior sample index
-Y = data observation row
-Z = response variable (here, patches)
-
-```{r metrics_calculation_function}
-### slow !!!!! need a rewrite to optimise
-metrics_estimate <- function(mod = mod) {
-  data_results <- list(NA)
-
-  METAPOPlevels <- levels(factor(data$METAPOP_ID))
-  ###an object with each metapop name so we can loop and call their names as needed
-
-  for (h in 1:length(METAPOPlevels)) { ## we do everything metapop by metapop first
-
-    data_subset <- subset(data, METAPOP_ID == METAPOPlevels[h])
-
-    patch_by_patch_Nmean <- apply(fitted(mod, newdata = data_subset, summary = FALSE), 3, rowMeans)
-    ## predictions of the number of mites for each patch at each time
-
-    metapopNmean <- rowSums(patch_by_patch_Nmean) # metapop size = sum of all patches
-    patchNmean <- metapopNmean / 9
-
-    ### there are three types of patch in a metapop differing in level of local connectedness
-    ### we can calculate mean patch size for each of them and compare them
-    Nmean_corners <- rowMeans(patch_by_patch_Nmean[, c(1, 3, 7, 9)])
-    Nmean_center <- patch_by_patch_Nmean[, 5]
-    Nmean_sides <- rowMeans(patch_by_patch_Nmean[, c(2, 4, 6, 8)])
-
-    ### get intercept means on the latent scale, excluding time effect
-    ### BUT including the METAPOP_ID average effect
-    ### (remember, we are working replicate by replicate, so this is needed
-    ### to have the correct latent intercept)
-    if (sum(is.na(which.trt))> 0) {
-      latent_intercept <- as.data.frame(fixef(mod, summary = FALSE)) +
-        ranef(mod, summary = FALSE)$METAPOP_ID[, METAPOPlevels[h], ]
-    }
-
-    if (sum(is.na(which.trt))== 0) {
-      latent_intercept <- as.data.frame(fixef(mod, summary = FALSE)) %>%
-        select(contains(paste("TREATMENT", unique(data_subset$TREATMENT), sep = ""))) +
-        ranef(mod, summary = FALSE)$METAPOP_ID[, METAPOPlevels[h], ]
-    }
-
-
-    ### get the latent TIME variance-covariance matrix for the metapop we're currently in
-    include <- colnames(VarCorr(mod, summary = FALSE)$WEEK2$cov)
-    include <- include[str_detect(include, pattern = METAPOPlevels[h])]
-    vcv_latent_time <- VarCorr(mod, summary = FALSE)$WEEK2$cov[, include, include]
-
-
-    ### convert from latent TIME VCV matrix to observed scale VCV matrix
-    ## first, create a dummy array; values will be filled with correct values below
-    vcv_obs_time <- vcv_latent_time
-
-    ## !Read the de Villemereuil et al Genetics paper and QGglmm package help for details
-    ## but broad description of what happens below is
-    ## for each posterior sample (nsamples(mod)), create a vector psi, then fill it with value for each patch
-    ## then use this psi to get the observed VCV from the latent VCV
-    ## repeat for all posterior samples
-    for (i in 1:nsamples(mod)) {
-      psiM <- NA
-      for (j in 1:9) {
-        psiM[j] <- QGpsi(latent_intercept[i, j], vcv_latent_time[i, j, j], d.link.inv = function(x) {
-          exp(x)
-        })
-      }
-      psiM <- diag(psiM)
-      vcv_obs_time[i, , ] <- psiM %*% vcv_latent_time[i, , ] %*% t(psiM)
-    }
-
-
-    ### calculate our posterior variability metrics
-    alpha <- NA
-    gamma <- NA
-    for (i in 1:nsamples(mod)) {
-      alpha[i] <- alpha_wang_loreau(vcv_obs_time[i, , ], patch_by_patch_Nmean[i, ])
-      gamma[i] <- gamma_wang_loreau(vcv_obs_time[i, , ], patch_by_patch_Nmean[i, ])
-    }
-
-    ### group our metrics of interest in a data.frame
-    metrics <- data.frame(
-      metapopNmean = metapopNmean, patchNmean = patchNmean,
-      Nmean_corners = Nmean_corners, Nmean_center = Nmean_center, Nmean_sides = Nmean_sides,
-      alpha = alpha, beta1 = alpha / gamma, beta2 = alpha - gamma, gamma = gamma,
-      METAPOP_ID = as.character(METAPOPlevels[h]), TREATMENT = "all", which_model = deparse(substitute(mod))
-    ) %>%
-      ### precalculate within metapopulations differences BEFORE averaging
-      mutate(
-        deltaN_corners_center = Nmean_corners - Nmean_center,
-        deltaN_sides_center = Nmean_sides - Nmean_center,
-        deltaN_corners_sides = Nmean_corners - Nmean_sides
-      )
-
-    ### if the model has a TREATMENT effect, replace the default ("all") by the correct TREATMENT in the output table
-    if (sum(is.na(which.trt)) == 0) {
-      metrics$TREATMENT <- as.character(unique(data_subset$TREATMENT))
-    }
-
-    ### add MCMC iteration number to table, important to compute differences among groups later
-    metrics <- as_tibble(metrics) %>%
-      add_column(.iteration = 1:dim(metrics)[1]) ## across all chains together
-
-    ### we store the output for each metapop in a list...
-    data_results[[h]] <- metrics
-  }
-
-  ### ...and then we bind all the tables in the list together
-  data_results <- bind_rows(data_results) %>% #I need to find a way not to have the binding character and factor warning (it's just a warning)
-    group_by(TREATMENT, which_model, .iteration) %>%
-    summarize_if(is.numeric, mean) %>%
-    ungroup()
-  ## the very last line above is where we finally group metrics calculated at the replicate level
-  ## and average them through the whole dataset/by treatment
-
-  return(data_results)
-}
+```{r P_means}
+tab <- tab  %>% 
+  mutate(P_latent_intercept = map2(
+    .x = P_fixef, .y = P_ranef_rpl,
+    .f= function(.x,.y){.x + .y}
+  )) %>% 
+  mutate(P_pred = map2( ## patch by patch average
+    .x = P_latent_intercept, .y = P_vcv_time_latent,
+    .f = ~ exp(.x + diag(.y)/2)  ## analytic form for the Poisson model, see annex villemereuil
+  )) %>% 
+  ### we then average within metapops:
+  mutate(P_mean_all = map(.x = P_pred, .f = ~mean(.x))) %>% 
+  mutate(P_mean_corners = map(.x = P_pred, .f = ~mean(.x[c(1,3,7,9)]))) %>% 
+  mutate(P_mean_center = map(.x = P_pred, .f = ~mean(.x[c(5)]))) %>% 
+  mutate(P_mean_sides = map(.x = P_pred, .f = ~mean(.x[c(2,4,6,8)]))) %>% 
+  unnest(c(P_mean_all, P_mean_corners,P_mean_center,P_mean_sides)) 
 ```
 
-Once the function is in the environment, to get what we want, we "just" have to do this:
-```{r get_results}
+Now, to estimate $\alpha$, $\beta$ and $\gamma$ variabilities, we need to get the temporal variance-covariance matrices from the latent scale to the data scale [see @villemereuilGeneralMethodsEvolutionary2016]. Ideally we'd use the `QGmv...` functions in the `QGglmm` package, but they become terribly inefficient in memory use once the multivariate model has more than 5 variables (and we have 9). But our 9 variables have the same family, so it's actually very easy to do it manually using the closed form formulas in the source papers!! 
 
-if(file.exists(here("R_output","tab_results.Rdata")))
-  {
-  load(here("R_output","tab_results.Rdata"))
-  }else
-    {
+The first step is to estimate a $\psi$ matrix, a diagonal matrix containing for each variable its $\psi$ value. And actually, we've already estimated it, since for a Poisson model, $\psi$ is the predicted mean (i.e. `P_pred` for us). So we just have to diagonalise it. Then we can use it to convert the latent scale temporal VCV to the observed scale, and finally use these VCVs and the predicted means to estimate the $\alpha$, $\beta$ and $\gamma$ variabilities:
 
-tab_results <- metrics_estimate(mod = mod) ## change model name as appropriate here
+```{r P_variabilities}
+tab <- tab %>% 
+  mutate(P_psi = map(.x = P_pred, .f = function(.x){diag(.x)})) %>% 
+  mutate(P_vcv_time_obs = map2(.x = P_psi, .y= P_vcv_time_latent,
+                                .f = ~ (.x %*% .y %*% t(.x))
+  )) %>% 
+  mutate( 
+    P_alpha = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% alpha_wang_loreau(varcorr=., means = .y)),
+    P_gamma = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = .y))
+  ) %>% 
+  unnest(cols=c(P_alpha,P_gamma)) %>% 
+  mutate(
+    P_beta1 = P_alpha / P_gamma, P_beta2 = P_alpha - P_gamma
+  )
+```
 
-save(list="tab_results", file=here("R_output","tab_results.Rdata"))
-}
+
+And we can finish by doing all of the above for the metapopulation-level model (at least that is meaningful to do):
+
+```{r M_means}
+tab<- tab %>% 
+  mutate(M_pred = exp(M_fixef + (M_var_rpl_latent + M_var_time_latent)/2)) %>% 
+  mutate(M_latent_intercept = M_fixef + M_ranef_rpl) %>% 
+  mutate(M_alpha = map2(.x = M_latent_intercept, .y = M_var_time_latent,
+                        .f = function(.x,.y){
+                          M_obscale = QGparams(mu=.x, var.a = .y, var.p = .y, model="Poisson.log", verbose=FALSE)
+                          CV_L = sqrt(M_obscale$var.a.obs)/M_obscale$mean.obs
+                          return(CV_L^2)
+                          })) %>% 
+  unnest(M_alpha)
+```
+
+
+## Averaging across replicates
+
+To conclude, we just need to to get, iteration by iteration, the average of every quantity of interest estimated at the replicate level:
+
+```{r P_summary}
+P_summary <- tab %>% 
+  group_by(.iteration, SHUFFLE, LENGTH) %>% 
+  summarise(P_mean_all = mean(P_mean_all), 
+            P_mean_corners = mean(P_mean_corners), 
+            P_mean_sides = mean(P_mean_sides), 
+            P_mean_center = mean(P_mean_center), 
+            P_alpha = mean(P_alpha), 
+            P_beta1 = mean(P_beta1), 
+            P_beta2 = mean(P_beta2), 
+            P_gamma = mean(P_gamma)) %>% 
+  ungroup()
+```
+
+
+```{r M_summary}
+M_summary <- tab %>% 
+  group_by(.iteration,SHUFFLE,LENGTH) %>% 
+  summarise(M_mean=mean(M_pred),
+            M_alpha=mean(M_alpha)) %>% 
+  ungroup()
 ```
 
 
 # Part 4- Figures
 
-Before doing the figures, we need to recreate the `SHUFFLE` and `LENGTH` columns. We also need to create color palettes that'll be used throughout:
+[Vin prevision of final versions] Before doing the figures, we need to create color palettes that'll be used throughout:
 
-```{r figure_prep}
-tab_results <-tab_results %>% 
-  mutate(
-    SHUFFLE=str_extract(TREATMENT,"[:upper:]+"),
-    LENGTH=str_extract(TREATMENT,"[:digit:]+") %>% as.numeric()
-         )
-
+```{r figure-palettes}
 paletteLENGTH <- c("#D55E00", "#E69F00", "#F0E442") #for figures 2 to 4
 paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99") #for figure 5
 ```
