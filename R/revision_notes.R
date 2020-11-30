@@ -40,46 +40,6 @@ tab<-tab %>%
 ### by chance all of our variables are from the same distribution, and an easy one, so we can do things manually:
 
 
-
-
-obssummary <- data %>% 
-  pivot_longer(P11:P33) %>% 
-  group_by(SHUFFLE,LENGTH,METAPOP_ID,name) %>% ##what's the most relevat/correct avging for display?
-  summarise(P_mean=mean(value), P_se=plotrix::std.error(value),P_median = median(value),
-            M_mean=mean(METAPOPSUM),M_se=plotrix::std.error(METAPOPSUM))
-
-P_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_mean_all)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)+0.05),
-               orientation="horizontal",.width=c(0.01,0.95))+
-  geom_pointinterval(
-    data = obssummary, 
-    aes(x=P_mean, xmin=P_mean-P_se,xmax=P_mean+P_se,y=log(LENGTH,base=4)-0.05), 
-    col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
-  scale_x_continuous("mean patch population size (adult females)")+
-  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
-  facet_wrap(~SHUFFLE)+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-
-
-M_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_mean)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)+0.05),
-               orientation="horizontal",.width=c(0.01,0.95))+
-  geom_pointinterval(
-    data = obssummary %>% select(SHUFFLE, LENGTH, M_mean,M_se) %>% distinct(), 
-    aes(x=M_mean, xmin=M_mean-M_se,xmax=M_mean+M_se,y=log(LENGTH,base=4)-0.05), 
-    col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
-  scale_x_continuous("mean metapopulation size (adult females)")+
-  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
-  facet_wrap(~SHUFFLE)+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-
-
-
-
 tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_alpha)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)),
@@ -169,3 +129,258 @@ fitdistrplus::fitdist((sort(x)+rev(sort(y))),"lnorm")
 
 
 
+
+## Figure 2
+
+Figs 2 to 4 are each made of 4 panels, one per key variable (metapopulation size, $\alpha,\beta,\gamma$ variabilities). We create each panel separately then use the `patchwork` package to merge them and to apply styles common to all panels.
+
+Figure 2 contains posteriors for the non-shuffled (control) metapopulations:
+  
+  ```{r fig2}
+
+tab2 <- tab_results %>% 
+  filter(SHUFFLE == "NO")
+
+p2a <- tab2 %>% 
+  ggplot()+
+  stat_halfeye(aes(x=metapopNmean,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy") +
+  labs(x = "Metapopulation mean density")+
+  scale_y_discrete("Length (cm)")
+
+p2b <- tab2 %>% 
+  ggplot()+
+  stat_halfeye(data= . %>% filter(alpha<=20), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=alpha,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=alpha,y=factor(LENGTH)),
+                     point_interval = median_hdi)+
+  scale_x_continuous("Alpha variability")+
+  scale_y_discrete("")
+
+p2c <- tab2 %>% 
+  ggplot()+
+  stat_halfeye(aes(x=beta1,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy")+
+  scale_x_continuous("Beta variability")+
+  scale_y_discrete("Length (cm)")
+
+p2d <- tab2 %>% 
+  ggplot()+
+  stat_halfeye(data=. %>% filter(gamma<=15), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=gamma,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=gamma,y=factor(LENGTH)),
+                     point_interval = median_hdi)+
+  scale_x_continuous("Gamma variability") +
+  scale_y_discrete("")
+
+(p2a | p2b)/ (p2c | p2d) + plot_annotation(tag_levels = 'A') & 
+  scale_fill_manual(values = paletteLENGTH) &
+  theme_bw() & 
+  theme(legend.position = "none", text=element_text(size = 20))
+```
+
+## Figure 3
+
+Figure 3 contains posteriors for the shuffled metapopulations:
+  
+  ```{r fig3}
+
+tab3 <- tab_results %>% 
+  filter(SHUFFLE == "R")
+
+p3a <- tab3 %>% 
+  ggplot()+
+  stat_halfeye(aes(x=metapopNmean,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy") +
+  scale_x_continuous("Metapopulation mean density")+
+  scale_y_discrete("Length (cm)")
+
+p3b <- tab3 %>% 
+  ggplot()+
+  stat_halfeye(data=. %>% filter(alpha<=20), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=alpha,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=alpha,y=factor(LENGTH)),
+                     point_interval = median_hdi)+
+  scale_x_continuous("Alpha variability")+
+  scale_y_discrete("")
+
+p3c <- tab3 %>% 
+  ggplot()+
+  stat_halfeye(aes(x=beta1,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy")+
+  scale_x_continuous("Beta variability")+
+  scale_y_discrete("Length (cm)")
+
+p3d <- tab3 %>% 
+  ggplot()+
+  stat_halfeye(data= . %>% filter(gamma<=15), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=gamma,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=gamma,y=factor(LENGTH)),
+                     point_interval = median_hdi)+
+  scale_x_continuous("Gamma variability") +
+  scale_y_discrete("")
+
+(p3a | p3b)/ (p3c | p3d) + plot_annotation(tag_levels = 'A') & 
+  scale_fill_manual(values = paletteLENGTH) & 
+  theme_bw() & 
+  theme(legend.position = "none", text=element_text(size = 20))
+
+```
+
+## Figure 4
+
+Figure 4 contains posteriors of the comparison between shuffled and non shuffled treatments. There are two options here, either use the difference between treatments (chunk `fig4`), or the ratio (`4bis`) between treatments. The ratio may be more appropriate since we are dealing with multiplicative processes:
+  
+  ### Figure 4: additive comparison
+  
+  ```{r fig4}
+
+p4a <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "metapopNmean", by = SHUFFLE) %>%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = metapopNmean, fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy") +
+  geom_vline(xintercept = 0) + 
+  scale_x_continuous("Metapopulation mean density") +
+  scale_y_discrete("Length (cm)")
+
+p4b <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "alpha", by = SHUFFLE) %>%
+  ggplot() +
+  stat_halfeye(data=. %>% filter(abs(alpha)<=15), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=alpha,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=alpha,y=factor(LENGTH)),
+                     point_interval = median_hdi)+
+  geom_vline(xintercept = 0) + 
+  scale_x_continuous("Alpha variability") +
+  scale_y_discrete("")
+
+p4c <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "beta1", by = SHUFFLE) %>%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = beta1,fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy") +
+  geom_vline(xintercept = 0) +
+  scale_x_continuous("Beta variability") +
+  scale_y_discrete("Length (cm)")
+
+p4d <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "gamma", by = SHUFFLE) %>%
+  ggplot() +
+  stat_halfeye(data=. %>% filter(abs(gamma)<=5), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=gamma,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=gamma,y=factor(LENGTH)),
+                     point_interval = median_hdi)+
+  geom_vline(xintercept = 0) +
+  scale_x_continuous("Gamma variability") +
+  scale_y_discrete("")
+
+
+(p4a | p4b)/ (p4c | p4d) + plot_annotation(title = "Comparisons, shuffled - control", tag_levels = 'A') & 
+  theme_bw() & 
+  scale_fill_manual(values = paletteLENGTH) & 
+  theme(legend.position = "none", text=element_text(size = 20))
+```
+
+### Figure 4bis: multiplicative comparison
+
+```{r fig4bis}
+p4a <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "metapopNmean", by = SHUFFLE, fun= `/`) %>%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = metapopNmean, fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy") +
+  geom_vline(xintercept = 1) + 
+  scale_x_continuous("Metapopulation mean density") +
+  scale_y_discrete("Length (cm)")
+
+p4b <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "alpha", by = SHUFFLE, fun= `/`) %>%
+  ggplot() +
+  stat_halfeye(data=. %>% filter(alpha<=10), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=alpha,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=alpha,y=factor(LENGTH)),
+                     point_interval = median_hdi)+
+  geom_vline(xintercept = 1) + 
+  scale_x_continuous("Alpha variability") +
+  scale_y_discrete("")
+
+p4c <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "beta1", by = SHUFFLE, fun= `/`) %>%
+  ggplot() +
+  stat_halfeye(aes(y = factor(LENGTH), x = beta1,fill=factor(LENGTH)),
+               point_interval = median_hdi,normalize="xy") +
+  geom_vline(xintercept = 1) +
+  scale_x_continuous("Beta variability") +
+  scale_y_discrete("Length (cm)")
+
+p4d <- tab_results %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable = "gamma", by = SHUFFLE, fun= `/`) %>%
+  ggplot() +
+  stat_halfeye(data=. %>% filter(gamma<=5), ##artificial adjustment for plotting, remove beyond 99% quantile for readability
+               aes(x=gamma,y=factor(LENGTH),fill=factor(LENGTH)),
+               point_interval = NULL,normalize="xy") +
+  stat_pointinterval(aes(x=gamma,y=factor(LENGTH)),
+                     point_interval = median_hdi)+
+  geom_vline(xintercept = 1) +
+  scale_x_continuous("Gamma variability") +
+  scale_y_discrete("")
+
+
+(p4a | p4b)/ (p4c | p4d) + plot_annotation(title = "Comparisons, ratio shuffled / control", tag_levels = 'A') & 
+  theme_bw() & 
+  scale_fill_manual(values = paletteLENGTH) & 
+  theme(legend.position = "none", text=element_text(size = 20))
+```
+
+## Figure 5
+
+Figure 5 shows what happens at the local patch scale, depending on the local level of patch connectedness:
+  
+  ```{r fig5}
+tab_results %>% 
+  select(Nmean_corners,Nmean_center,Nmean_sides, LENGTH, SHUFFLE,.iteration) %>%
+  pivot_longer(cols=c(Nmean_corners,Nmean_center,Nmean_sides),
+               values_to="N_local") %>% 
+  mutate(name = fct_recode(factor(name), corner="Nmean_corners",edge="Nmean_sides",center="Nmean_center")) %>% 
+  mutate(`local connectedness` = fct_relevel(name,"corner",after=Inf)) %>% 
+  mutate(SHUFFLE = fct_recode(factor(SHUFFLE),control="NO",randomized="R")) %>% 
+  ggplot()+
+  stat_halfeye(aes(x=N_local,y=factor(LENGTH),fill=`local connectedness`, alpha=0.5))+
+  scale_x_continuous("mean local population density")+
+  scale_fill_manual(values=paletteLOCAL)+
+  scale_y_discrete("Length (cm)")+
+  scale_alpha(guide="none")+
+  facet_grid(rows=vars(SHUFFLE))+
+  theme_bw() & 
+  theme(legend.position = "bottom", text=element_text(size = 20))
+
+```
+
+# More on inferences
+
+The function `compare_levels()` used to make Figure 4 can be used to obtain actual numbers and intervals for many comparisons. Only one example displayed here for simplicity, see the help of both functions for more details, and explore:
+  
+  ```{r compare}
+## an example
+## calculating differences between treatment using compare_levels
+compare_levels(tab_results, variable = "metapopNmean", by = TREATMENT) %>%
+  mean_hdi()
+
+
+```
