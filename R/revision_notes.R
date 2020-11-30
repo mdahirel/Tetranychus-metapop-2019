@@ -27,12 +27,13 @@ P_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID %>%
   mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
   unnest_longer(P_ranef_rpl, indices_to = "METAPOP_ID") %>% 
   mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
-         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
+         SHUFFLE=str_extract(METAPOP_ID,"NO|R")) %>% 
+  mutate(TREATMENT=interaction(LENGTH,SHUFFLE))
 
 
 ### now we need to extract the temporal variance-covariance matrices:
-memory.limit(20000) #### if needed, a little memory boost may be needed to handle the full vcv matrix in final model
-P_vcv_time_global <- VarCorr(mod, summary = FALSE)$WEEK2$cov
+memory.limit(40000) #### if needed, a little memory boost to handle the full vcv matrix in final model
+P_vcv_time_global <- VarCorr(mod, summary = FALSE)$WEEKrpl$cov
 
 P_vcv_time_latent<-P_ranef_rpl %>% 
   select(.iteration,METAPOP_ID) %>% 
@@ -45,11 +46,15 @@ P_vcv_time_latent<-P_ranef_rpl %>%
 
 rm(P_vcv_time_global);gc() ##we remove the big global VCV from memory since we don't need it anymore
 
-P_vcv_rpl <- VarCorr(mod, summary = FALSE)$METAPOP_ID$cov %>% 
+P_vcv_rpl <- VarCorr(mod, summary = FALSE)$METAPOP_ID$sd %>% 
   array_tree(margin=1) %>% 
   tibble() %>% 
   rename(., P_vcv_rpl_latent=".") %>% 
-  mutate(.iteration = 1:dim(.)[1])
+  mutate(.iteration = 1:dim(.)[1]) %>% 
+  mutate(P_vcv_rpl_latent=map(.x=P_vcv_rpl_latent,
+                       .f=function(.x){diag(.x^2)}))
+
+
 
 ### we do the same for the metapop sum model:
 M_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID2 %>%
@@ -64,7 +69,7 @@ M_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID2 %>%
          SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
 
 
-M_var_time <- VarCorr(mod,summary=FALSE)$WEEK3$sd %>%
+M_var_time <- VarCorr(mod,summary=FALSE)$WEEKrpl2$sd %>%
   as.data.frame() %>% 
   mutate(.iteration = 1:dim(.)[1]) %>% 
   pivot_longer(-.iteration) %>% 
@@ -128,7 +133,7 @@ tab <- tab %>%
   mutate(P_vcv_total_latent = map2(.x = P_vcv_time_latent, .y = P_vcv_rpl_latent,
                           .f = function(.x,.y){.x+.y})) %>% 
   mutate(P_pred = map2( ## patch by patch average
-    .x = P_fixef, .y = P_vcv_time_latent_mean, # or vcv_total? or vcv_time_latent, or vcv_time_latent_mean...?
+    .x = P_fixef, .y = P_vcv_time_latent, # or vcv_total? or vcv_time_latent, or vcv_time_latent_mean...?
     .f = ~ exp(.x + diag(.y)/2)  ## analytic form for the Poisson model, see annex villemereuil
   )) %>% 
   mutate(P_pred_for_var = map2( ## patch by patch mean, not averaged over anything else, needed for alpha/beta/gamma vars
@@ -233,8 +238,8 @@ tab %>% select(SHUFFLE,LENGTH, METAPOP_ID, M_alpha) %>%
   rename(low_M_alpha=.lower,high_M_alpha=.upper) %>% 
   left_join(test1) %>% 
   ggplot()+
-  #geom_segment(aes(x=M_alpha,xend=M_alpha,y=low_P_gamma,yend=high_P_gamma),col="grey")+
-  #geom_segment(aes(x=low_M_alpha,xend=high_M_alpha,y=P_gamma,yend=P_gamma),col="grey")+
+  geom_segment(aes(x=M_alpha,xend=M_alpha,y=low_P_gamma,yend=high_P_gamma),col="grey")+
+  geom_segment(aes(x=low_M_alpha,xend=high_M_alpha,y=P_gamma,yend=P_gamma),col="grey")+
   geom_point(aes(x=M_alpha,y =P_gamma))+
   scale_x_continuous(expression(paste("metapopulation-level ", alpha)))+
   scale_y_continuous(expression(paste("patch-level ", gamma)))+
