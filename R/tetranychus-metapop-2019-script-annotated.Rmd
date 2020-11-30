@@ -24,7 +24,7 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
 
 (see manuscript/preprint text for more context)
 
-This script analyses data resulting from the study of experimental metapopulations of spider mites *Tetranychus urticae*. Each replicate metapopulation was composed of 9 patches connected by bridges; the bridge length varied between replicates. Abundances of adult females were tracked weekly in each patch of each metapopulation. We are interested in the effect of bridge length and randomization treatment (see text) on (meta)population size and various variability metrics. 
+This script analyses data resulting from the study of experimental metapopulations of spider mites *Tetranychus urticae*. Each replicate metapopulation was composed of 9 patches connected by bridges; the bridge length varied between replicates. Abundances of adult females were tracked weekly in each patch of each metapopulation. We are interested in the effect of bridge length and randomization treatment (see text) on mean patch-level population size, mean metapopulation size and various variability metrics. 
 
 This script relies heavily on de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] (for converting latent means and variance-covariance matrices to data/observed scale) and Wang and Loreau [@wangEcosystemStabilitySpace2014](for the principle and formula of $\alpha$, $\beta$, $\gamma$ variability in metapopulations). Everything below assumes the reader has read these two papers.
 
@@ -47,7 +47,7 @@ library(matrixStats)
 
 library(QGglmm) ## this package is needed to help convert variance-covariance matrices from latent to data scale
 
-library(patchwork)
+library(patchwork) #plotting
 
 library(here)
 
@@ -60,7 +60,7 @@ N_iter <- N_warmup + 200  ## recommended for publication-level quality: 2000 ite
 ## Nwarmup + 200 is probably good enough for tests
 
 ```
-k
+
 **Note:** The finished model object will likely be large (at least several 100s Mb) and take some time to fit (a few hours to half a day on the few laptops it has been tested on). If this causes problems, we invite you to try a model with a much smaller `N_warmup` and number of iterations post-warmup (see comments in code chunk above). It should be close enough to convergence, despite warnings, to allow you to get a general idea of the results.
 
 
@@ -100,7 +100,7 @@ Npatches <- length(unique(raw_data$PATCH)) ### as a check, counting how many pat
 
 ```
 
-The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its state at one time point). We finish by adding a metapopulation total column, which may be useful for some comparisons:
+The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its state at one time point). We finish by adding a metapopulation total column, for the metapopulation-level model:
 
 ```{r metapop-sum}
 data <- data %>% 
@@ -172,7 +172,7 @@ beta2_wang_loreau <- function(varcorr, means) {
 
 ## 2A - Model description
 
-We fit a multivariate generalized linear mixed/multilevel model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance. This is this second effect we are most interested in here.
+We fit a multivariate generalized linear mixed/multilevel model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance.
 
 The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
 
@@ -203,11 +203,7 @@ N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
 
 \boldsymbol{\Omega}_{\textrm{METAPOP}} = 
 \left(\begin{matrix}
-\sigma_{M[1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[3,3]} 
-\end{matrix}\right) 
-\boldsymbol{R}_{\textrm{METAPOP}}
-\left(\begin{matrix}
-\sigma_{M[1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[3,3]} 
+\sigma_{M[1,1]}^2 & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[3,3]}^2
 \end{matrix}\right)    \\
 
 \boldsymbol{\Omega}_{\textrm{TIME}[i]} = 
@@ -221,7 +217,7 @@ N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
 
 \end{equation*}$$
 
-where $\alpha$ are treatment-specific latent patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\gamma$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}$ the correlation matrices.
+where $\alpha$ are treatment-specific latent patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\gamma$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}_{\textrm{TIME}[i]}$ the temporal correlation matrix for the replicate $i$.
 
 You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later (we'll come back to these non-linearities later). It is important to note that it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
 
@@ -241,7 +237,7 @@ $$
 
 ## 2B - Implementation - formulas
 
-This is implemented in R as follow. First, we need to create a `TREATMENT` variable combining `LENGTH` and `SHUFFLE`. The `WEEKrpl` variable is useful to fit separate random effects per replicate (this is because in `brms`, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation). We're also going to create some duplicate columns, just so that the random effects from the patch-by-patch model and from the "all-metapop" model don't end up in the same slots of the fitted model object (it complicates postprocessing otherwise):
+This is implemented in R as follow. First, for simplicity we create a `TREATMENT` variable combining `LENGTH` and `SHUFFLE`. The `WEEKrpl` variable is useful to fit separate random effects per replicate (this is because in `brms`, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation). We're also going to create some duplicate columns, just so that the random effects from the patch-by-patch model and from the "all-metapop" model don't end up in the same slots of the fitted model object (it complicates postprocessing otherwise):
 
 ```{r treatment-create}
 data <- data %>% 
@@ -271,15 +267,17 @@ metapopformula <- mvbf(
     )
 ```
 
-note the `~0 + TREATMENT`, rather than `~TREATMENT` syntax in the fixed effects. It’s just a writing trick to directly obtain the coefficients we want and reduce the quantity of post-processing calculations needed, and be sure all prior means have the same precision. See Schielzeth [-@schielzethSimpleMeansImprove2010] and McElreath [-@mcelreathStatisticalRethinkingBayesian2020].  
+note the `~0 + TREATMENT`, rather than `~TREATMENT` syntax in the fixed effects. It’s just a writing trick so we don't need to deal with contrasts and to reduce the quantity of post-processing calculations needed, and also to be sure all prior for latent means have the same precision. See Schielzeth [-@schielzethSimpleMeansImprove2010] and McElreath [-@mcelreathStatisticalRethinkingBayesian2020].  
 
-see also the fact we "combined" the multivariate patch-level model and the univariate metapopulation-level model in one object (they aren't connected though, see the random effects). It's just to fit them in the same `brm` call to make it easier to compare the posteriors later if we want.
+See also the fact we "combined" the multivariate patch-level model and the univariate metapopulation-level model in one object (they aren't connected though, see the random effects). It's just to fit them in the same `brm` call to make it easier to compare the posteriors later if we want.
 
 ## 2C - Implementation - choosing priors
 
-We then select our priors. The priors we propose here are weakly informative [sensu @mcelreathStatisticalRethinkingBayesian2020]. For the fixed effects coefficients (corresponding to latent, i.e. on log scale, grand means of single patch population size), I based myself roughly on the entire distribution of non-zero population densities in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015] (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in De Roissart *et al.* (which would be something like $\textrm{Normal}(1.8,0.9)$ for one patch), mostly to have round numbers, but also to allow for a slightly wider prior.  We used a $\textrm{Normal}(4.2,1)$ for the corresponding parameter for the metapopulation-level model; this correspond roughly to a multiplication by 9 of the prior mean compared to the prior chosen for the patch-level approach, and there are 9 patches in each metapopulation.
+We then select our priors. 
 
-We place a slightly stronger prior on the temporal variances (observation-level random effects). These are individual patch-specific, so the idea is that if we don't do that, one rare outlier in a patch time series can have an undue influence and drive the variance too high. Given the temporal variances are used to predict the observed-scale means, that would lead to artificially inflated predicted means downstream.
+For the fixed effects coefficients (corresponding to latent, i.e. on log scale, grand means of single patch population size), I based myself roughly on the entire distribution of non-zero population densities in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015] (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in De Roissart *et al.* (which would be something like $\textrm{Normal}(1.8,0.9)$ for one patch), mostly to have round numbers, but also to allow for a slightly wider prior.  We used a $\textrm{Normal}(4.2,1)$ for the corresponding parameter for the metapopulation-level model; this correspond roughly to a multiplication by 9 of the prior mean compared to the prior chosen for the patch-level approach, and there are 9 patches in each metapopulation.
+
+For the random effects, we started with weakly informative half-normal priors [@mcelreathStatisticalRethinkingBayesian2020]. We placed slightly stronger priors on the temporal variances (observation-level random effects). These are individual patch-specific, so the idea is that if we don't do that, one rare outlier in a patch time series can have an undue influence and drive the variance too high. Given the temporal variances are used to predict the observed-scale means, that would lead to artificially inflated predicted means downstream.
 
 ```{r prior-setting}
   prior <- c(
