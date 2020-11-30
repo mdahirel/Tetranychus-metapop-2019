@@ -55,8 +55,8 @@ library(here)
 # rstan_options(auto_write = TRUE) #for rstan
 options(mc.cores = 2) ## reduce/increase depending on cores available
 N_chains <- 4
-N_warmup <- 400   ## used for publication: 10000 ## 200 is enough for tests
-N_iter <- N_warmup + 200  ## recommended for publication-level quality: 2000 iterations post warmup when all chains combined 
+N_warmup <- 1000   ## used for publication: 10000 ## 200 is enough for tests
+N_iter <- N_warmup + 1000  ## recommended for publication-level quality: 2000 iterations post warmup when all chains combined 
 ## Nwarmup + 200 is probably good enough for tests
 
 ```
@@ -482,7 +482,7 @@ tab <- P_ranef_rpl %>%
 
 ## Estimation of key quantities
 
-We first use information on patch-level fixed effects and patch-level temporal variances to estimate data-scale patch-level means. Because we allow within-patch variance to vary among replicates (and so among treatments), we can't infer anything about *mean* differences among treatments from fixed effects only, as the data-scale mean depends on both latent mean and latent within-patch variance [see @villemereuilGeneralMethodsEvolutionary2016]. We need to first estimate patch means from latent means and variances, and then average across patches within replicates:
+We first use information on patch-level fixed effects and patch-level temporal variances to estimate data-scale patch-level means. Because we allow within-patch variance to vary among replicates (and so among treatments), we can't infer anything about *mean* differences among treatments from fixed effects only, as the data-scale mean depends on both latent mean and latent within-patch variance [see @villemereuilGeneralMethodsEvolutionary2016]. Sp we need to first estimate patch means from latent means and variances, and then average across patches within replicates:
 
 ```{r P_means}
 tab <- tab  %>% 
@@ -490,19 +490,21 @@ tab <- tab  %>%
     .x = P_fixef, .y = P_ranef_rpl,
     .f= function(.x,.y){.x + .y}
   )) %>% 
-  mutate(P_pred = map2( ## patch by patch average
+  mutate(P_pred = map2( ## patch by patch patch-level average
     .x = P_latent_intercept, .y = P_vcv_time_latent,
     .f = ~ exp(.x + diag(.y)/2)  ## analytic form for the Poisson model, see annex villemereuil
   )) %>% 
+  mutate(P_geom_mean = map(.x=P_fixef, .f = ~exp(.x))) %>% 
   ### we then average within metapops:
   mutate(P_mean_all = map(.x = P_pred, .f = ~mean(.x))) %>% 
   mutate(P_mean_corners = map(.x = P_pred, .f = ~mean(.x[c(1,3,7,9)]))) %>% 
   mutate(P_mean_center = map(.x = P_pred, .f = ~mean(.x[c(5)]))) %>% 
   mutate(P_mean_sides = map(.x = P_pred, .f = ~mean(.x[c(2,4,6,8)]))) %>% 
-  unnest(c(P_mean_all, P_mean_corners,P_mean_center,P_mean_sides)) 
+  mutate(P_geom_mean_all = map(.x = P_geom_mean, .f = ~mean(.x))) %>% 
+  unnest(c(P_mean_all, P_mean_corners,P_mean_center,P_mean_sides, P_geom_mean_all)) 
 ```
 
-Now, to estimate $\alpha$, $\beta$ and $\gamma$ variabilities, we need to get the temporal variance-covariance matrices from the latent scale to the data scale [see @villemereuilGeneralMethodsEvolutionary2016]. Ideally we'd use the `QGmv...` functions in the `QGglmm` package, but they become terribly inefficient in memory use once the multivariate model has more than 5 variables (and we have 9). But our 9 variables have the same family, so it's actually very easy to do it manually using the closed form formulas in the source papers!! 
+Now, to estimate $\alpha$, $\beta$ and $\gamma$ variabilities, we need to get the temporal variance-covariance matrices from the latent scale to the data scale [see @villemereuilGeneralMethodsEvolutionary2016]. Ideally we'd use the `QGmv...` functions in the `QGglmm` package, but they become terribly inefficient in memory use once the multivariate model has more than 5 variables (and we have 9). It's because the multivariate functions integrate with `cubature` rather than using the closed form version, (if I understood correctly) because they have to work even for cases where the different variables are from different families. But we're lucky because our 9 variables have the same family, so it's actually very easy to do it manually using the closed form formulas in the source papers!! 
 
 The first step is to estimate a $\psi$ matrix, a diagonal matrix containing for each variable its $\psi$ value. And actually, we've already estimated it, since for a Poisson model, $\psi$ is the predicted mean (i.e. `P_pred` for us). So we just have to diagonalise it. Then we can use it to convert the latent scale temporal VCV to the observed scale, and finally use these VCVs and the predicted means to estimate the $\alpha$, $\beta$ and $\gamma$ variabilities:
 
@@ -516,14 +518,14 @@ tab <- tab %>%
     P_alpha = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% alpha_wang_loreau(varcorr=., means = .y)),
     P_gamma = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = .y))
   ) %>% 
-  unnest(cols=c(P_alpha,P_gamma, P_alpha_pheno)) %>% 
+  unnest(cols=c(P_alpha,P_gamma)) %>% 
   mutate(
     P_beta1 = P_alpha / P_gamma, P_beta2 = P_alpha - P_gamma
   )
 ```
 
 
-And we can finish by doing all of the above for the metapopulation-level model (at least that is meaningful to do). Here we can directly use the `QGparams` function, since it uses the closed form formulas we used above:
+And we can finish by doing all of the above for the metapopulation-level model (at least the things that are meaningful to do). Here we can directly use the `QGparams` function, since it uses the closed form formulas we used above:
 
 ```{r M_means}
 tab<- tab %>% 
@@ -531,8 +533,8 @@ tab<- tab %>%
   mutate(M_latent_intercept = M_fixef + M_ranef_rpl) %>% 
   mutate(M_alpha = map2(.x = M_latent_intercept, .y = M_var_time_latent,
                         .f = function(.x,.y){
-                          M_obscale = QGparams(mu=.x, var.a = .y, var.p = .y, model="Poisson.log", verbose=FALSE)
-                          CV_L = sqrt(M_obscale$var.a.obs)/M_obscale$mean.obs
+                          M_obsscale = QGparams(mu=.x, var.a = .y, var.p = .y, model="Poisson.log", verbose=FALSE)
+                          CV_L = sqrt(M_obsscale$var.a.obs)/M_obsscale$mean.obs
                           return(CV_L^2)
                           })) %>% 
   unnest(M_alpha)
@@ -550,6 +552,7 @@ P_summary <- tab %>%
             P_mean_corners = mean(P_mean_corners), 
             P_mean_sides = mean(P_mean_sides), 
             P_mean_center = mean(P_mean_center), 
+            P_geom_mean = mean(P_geom_mean_all),
             P_alpha = mean(P_alpha), 
             P_beta1 = mean(P_beta1), 
             P_beta2 = mean(P_beta2), 
@@ -713,7 +716,7 @@ M_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_m
 ## metapopulation means
 
 ```{r M_plot}
-tM_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_mean)) %>% 
+M_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_mean)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)+0.05, fill=factor(LENGTH)),
                orientation="horizontal",.width=c(0.01,0.95))+

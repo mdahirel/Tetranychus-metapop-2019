@@ -1,5 +1,27 @@
 
+test_fit %>% group_by(METAPOP_ID,SHUFFLE,LENGTH,name) %>% summarise(mean_hdi(mean)) %>% left_join(test_obs) %>% ggplot()+geom_boxplot(aes(x=interaction(SHUFFLE,LENGTH),y=y/mean_obs))
 
+
+test_obs<-data %>% pivot_longer(P11:P33) %>% group_by(SHUFFLE,LENGTH,METAPOP_ID,name) %>% summarise(mean_obs=mean(value))
+
+test_fit %>% group_by(METAPOP_ID,SHUFFLE,LENGTH,name) %>% 
+  summarise(mean_hdi(mean)) %>% 
+  left_join(test_obs) %>% 
+  ggplot()+geom_point(aes(x=mean_obs,y=y))+geom_abline(intercept=0,slope=1)
+
+
+vars_obs<-data %>% group_by(METAPOP_ID,LENGTH,SHUFFLE) %>%
+  select(METAPOP_ID,SHUFFLE, LENGTH,P11:P33) %>% nest(data=c(P11,P12,P13,P21,P22,P23,P31,P32,P33)) %>% 
+  mutate(means=map(.x=data,.f=~.x %>% colMeans())) %>% mutate(covs=map(.x=data,.f=~.x %>% cov())) %>% 
+  mutate(alpha_obs=map2(.x=covs,.y=means,.f=~.x %>% 
+                          alpha_wang_loreau(varcorr=.,means=.y))) %>% 
+  mutate(gamma_obs=map2(.x=covs,.y=means,.f=~.x %>% 
+                          gamma_wang_loreau(varcorr=.,means=.y))) %>% unnest(c(alpha_obs,gamma_obs))
+
+tab %>% group_by(METAPOP_ID,LENGTH,SHUFFLE) %>% left_join(vars_obs) %>% 
+  ggplot()+stat_eye(aes(x=alpha_obs,y=P_alpha),normalize="xy")+
+  geom_abline(intercept=0,slope=1)+coord_cartesian(ylim=c(0.2,2.5))+
+  scale_x_continuous("observed alpha")+scale_y_continuous("predicted alpha")
 ###let's reorder the existing columns a bit, just to see better
 
 tab <- tab %>% 
