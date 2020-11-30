@@ -40,15 +40,7 @@ tab<-tab %>%
 ### by chance all of our variables are from the same distribution, and an easy one, so we can do things manually:
 
 
-tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_alpha)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)),
-               orientation="horizontal",.width=c(0.01,0.95))+
-  scale_x_continuous(expression(paste("mean ", alpha, " variability")))+
-  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
-  facet_wrap(~SHUFFLE)+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+
 
 ### quick check that alpha beta gamma make sense:
 ### normally, the alpha at the metapop level should be the gamma of the patch level
