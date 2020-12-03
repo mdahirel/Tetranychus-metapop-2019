@@ -6,3 +6,4 @@ tetranychus-metapop-2019-script-annotated.tex
 .Rproj.user
 R_output/model.Rdata
 R_output/tab_results.Rdata
+*.Rdata

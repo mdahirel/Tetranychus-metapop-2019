@@ -1,3 +1,135 @@
+
+data2<-data %>% 
+  select(METAPOP_ID,LENGTH,SHUFFLE, TREATMENT,WEEK,P11:P33) %>% 
+  pivot_longer(P11:P33) %>% 
+  mutate(local_connectedness = 1 + 1*(name %in% c("P12","P21","P23","P32"))+ 2*(name %in% c("P11","P13","P31","P33"))) %>% 
+  mutate(local_connectedness = fct_recode(factor(local_connectedness),
+                                          `center (8 links)` = "1", 
+                                          `side (5 links)` = "2", 
+                                          `corner (3 links)`="3")) %>% 
+  mutate(LENGTH=factor(LENGTH))
+
+
+
+mod2<-brm(value~local_connectedness+SHUFFLE+LENGTH+(1|METAPOP_ID/name)+(0+name|gr(METAPOP_ID:WEEK,by=METAPOP_ID)),family=poisson,
+          prior=c(set_prior("normal(2,1)",class="Intercept"), ### intercept is max connectedness local+landscape, + control
+                  set_prior("normal(0,1)",class="b"),
+                  set_prior("normal(0,1)",class="sd"),
+                  set_prior("normal(0,0.5)",class="sd",group="METAPOP_ID:WEEK"),
+                  set_prior("lkj(2)",class="cor")),
+          iter=2000,warmup=1000,chains=4,seed=42,data=data2,
+          control=list(adapt_delta=0.8,max_treedepth=15),
+          backend="cmdstanr")
+
+save(list="mod2", file=here("R_output","model2.Rdata"))
+
+## this additive dispersion model (see nakagawa) is a better choice than a multiplicative/negative binomial, since it allows us
+## to account for the fact temporal fluctuations may be correlated among patches from the same replicate.
+## important for alpha beta gamma, but also a better reflection of the system
+
+## idea: compare correlation as a function of distance
+
+
+
+
+
+P_latent_intercept <- data2 %>% 
+  select(METAPOP_ID,SHUFFLE,LENGTH,local_connectedness,name) %>% 
+  distinct() %>% 
+  add_fitted_draws(mod2,re_formula=~(1|METAPOP_ID/name),scale="linear") %>% ungroup() %>% 
+  select(METAPOP_ID,SHUFFLE,LENGTH,name,.iteration=.draw,P_latent_intercept=.value) %>% 
+  pivot_wider(values_from = P_latent_intercept, names_from=name) %>% 
+  nest(P_latent_intercept=c(P11,P12,P13,P21,P22,P23,P31,P32,P33)) %>% 
+  mutate(P_latent_intercept=map(.x=P_latent_intercept,.f=~.x %>% unlist()))
+
+memory.limit(40000) #### if needed, a little memory boost to handle the full vcv matrix in final model
+P_vcv_time_global <- VarCorr(mod2, summary = FALSE)$`METAPOP_ID:WEEK`$cov
+
+tab<-P_latent_intercept %>% 
+  mutate(P_vcv_time_latent=map2(.x=.iteration,.y=METAPOP_ID,
+                                .f=function(iter=.x,metapop=.y,source=P_vcv_time_global){
+                                  include <- colnames(source)
+                                  include <- include[str_detect(include, pattern = metapop)]
+                                  return(source[iter,include,include])
+                                }))
+
+tab<-tab  %>% 
+  mutate(P_pred = map2( ## patch by patch patch-level average
+    .x = P_latent_intercept, .y = P_vcv_time_latent,
+    .f = ~ exp(.x + diag(.y)/2)  ## analytic form for the Poisson model, see annex villemereuil
+  )) %>% 
+  ### we then average within metapops (we can only average anything, including variances, post-exponentiation _ see annex):
+  mutate(P_mean_all = map(.x = P_pred, .f = ~mean(.x))) %>% 
+  mutate(P_mean_corners = map(.x = P_pred, .f = ~mean(.x[c(1,3,7,9)]))) %>% 
+  mutate(P_mean_center = map(.x = P_pred, .f = ~mean(.x[c(5)]))) %>% 
+  mutate(P_mean_sides = map(.x = P_pred, .f = ~mean(.x[c(2,4,6,8)]))) %>% 
+  mutate(P_meanvar_all = map(.x = P_vcv_time_latent, .f = ~.x %>% diag() %>% mean())) %>% 
+  unnest(c(P_mean_all, P_mean_corners,P_mean_center,P_mean_sides, P_meanvar_all))
+
+
+
+
+
+
+
+
+
+
+var_mpop=VarCorr(mod2,summary=FALSE)$METAPOP_ID$sd^2
+var_m_patch = VarCorr(mod2,summary=FALSE)$patchID$sd^2  
+##maybe this var should be treatment-specific too (or do we just need the ranef by local connected)
+p_fixef= fixef(mod2, summary = FALSE)
+vartemp= (VarCorr(mod2,summary=FALSE)$WEEKtrt$sd)^2
+var_olre = VarCorr(mod2,summary=FALSE)$OLRE$sd^2
+
+p_fixef=as_tibble(p_fixef) %>% 
+  mutate(.iteration=1:dim(.)[1]) %>% 
+  pivot_longer(-.iteration) %>% 
+  rename(p_fixef=value)
+
+vartemp=as_tibble(vartemp) %>% 
+  mutate(.iteration=1:dim(.)[1]) %>% 
+  pivot_longer(-.iteration) %>% 
+  rename(vartemp=value) %>% 
+  mutate(name=str_remove_all(name,"Intercept:|[(]|[)]"))
+
+var_m_patch=as_tibble(var_m_patch) %>% 
+  mutate(.iteration=1:dim(.)[1]) %>% 
+  pivot_longer(-.iteration) %>% 
+  rename(var_m_patch=value) %>% 
+  mutate(name=str_remove_all(name,"Intercept:|[(]|[)]"))
+
+var_mpop = as_tibble(var_mpop) %>% 
+  mutate(.iteration=1:dim(.)[1]) %>% 
+  rename(var_mpop=Intercept)
+
+var_olre = as_tibble(var_olre) %>% 
+  mutate(.iteration=1:dim(.)[1]) %>% 
+  rename(var_olre=Intercept)
+
+tttt=left_join(p_fixef,vartemp) %>% 
+  left_join(var_m_patch) %>% 
+  left_join(var_mpop) %>% 
+  left_join(var_olre)
+
+trts=data2 %>% select(SHUFFLE,LENGTH,local_connectedness,TRT) %>% distinct() %>% 
+  mutate(name=str_remove_all(TRT," |[(]|[)]")) %>% 
+  mutate(name=paste("TRT",name,sep=""))
+
+tttt %>% left_join(trts) %>% mutate(preds=exp(p_fixef+(var_mpop+var_m_patch+vartemp+var_olre)/2)) %>% 
+group_by(SHUFFLE,.iteration) %>% summarise(preds=mean(preds)) %>% 
+ggplot()+stat_eye(aes(SHUFFLE,preds))+
+  coord_cartesian(ylim=c(0,50))
+
+
+test = data2 %>% 
+  add_fitted_draws(mod2,re_formula=~(1|METAPOP_ID)+(1|patchID)+(1|WEEKtrt)+(1|OLRE)) %>% 
+  group_by(.draw,local_connectedness,SHUFFLE,LENGTH) %>% 
+  summarise(mean=mean(.value))
+
+test %>% ggplot()+
+  stat_eye(aes(x=local_connectedness,y=mean))+facet_wrap(~LENGTH+SHUFFLE)
+
 test_obs<-data %>% pivot_longer(P11:P33) %>% 
   group_by(SHUFFLE,LENGTH,METAPOP_ID,name) %>% 
   summarise(mean_obs=mean(value))
