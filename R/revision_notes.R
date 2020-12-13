@@ -1,13 +1,34 @@
+test=prior_data %>% 
+  filter(Treatment == "Hom") %>% ## better match in patch size and variability
+  group_by(MP,P,Date) %>% 
+  mutate(total=AvgFem+AvgEggs+AvgMal+AvgJuv) %>% 
+  group_by(MP,P) %>%  ##metapop plus patch ID uniquely define a patch
+  mutate(was_populated = mean(total)>0) %>% ## we exclude all patches that were NEVER populated
+  ungroup() %>% 
+  filter(was_populated==TRUE)
 
-data2<-data %>% 
-  select(METAPOP_ID,LENGTH,SHUFFLE, TREATMENT,WEEK,P11:P33) %>% 
-  pivot_longer(P11:P33) %>% 
-  mutate(local_connectedness = 1 + 1*(name %in% c("P12","P21","P23","P32"))+ 2*(name %in% c("P11","P13","P31","P33"))) %>% 
-  mutate(local_connectedness = fct_recode(factor(local_connectedness),
-                                          `center (8 links)` = "1", 
-                                          `side (5 links)` = "2", 
-                                          `corner (3 links)`="3")) %>% 
-  mutate(LENGTH=factor(LENGTH))
+fitdistrplus::fitdist(subset(test$AvgFem*25,test$AvgFem>0),"lnorm")
+
+plot(density(test$AvgFem*25))
+lines(density(rlnorm(1000,3.5,1)),col="red")
+### sure we've excluded the zero to do the fitdist but it looks OKish
+
+
+## implications: 
+## total distribution well approx by lognorm(3.5,1)
+## saying that intercept prior is the obs distri of de roissart is reasonable
+
+## prior for random variances should make total variance(so metapop, patch, within patch)=1
+## a reasonable proposition
+
+## a general default wuld be halfnormal(0,1)
+## but this leads to wide distribution of variances when combined over all three vars
+## let's try 
+
+hist(sqrt(rnorm(1000,0,0.6)^2 + rnorm(1000,0,0.6)^2 + rnorm(1000,0,0.6)^2),50)
+
+plot(density(rlnorm(10000,3.5,1)))
+plot(density(rlnorm(10000,3.5,3)))
 
 
 
@@ -68,9 +89,38 @@ tab<-tab  %>%
 
 
 
+## mean patch correlation (latent), takes time
+
+tab<- tab %>% 
+  mutate(mean_cor = map(.x = P_vcv_time_latent,
+                        .f = function(.x){
+                         cor<-cov2cor(.x) ;
+                         cor[which(upper.tri(cor)==FALSE)]<-NA;
+                         cor<-mean(cor,na.rm=TRUE);
+                         return(cor)
+                        }))
+
+tab %>% unnest(mean_cor) %>% group_by(.iteration,SHUFFLE) %>% 
+  summarise(mean_cor=mean(mean_cor)) %>% 
+  ggplot()+stat_eye(aes(SHUFFLE,mean_cor))
+
+##looks like reshuffling increase among patch correlations
+## makes sense, because mimics random global dispersal
+
+tab %>% unnest(mean_cor) %>% group_by(.iteration,LENGTH) %>% 
+  summarise(mean_cor=mean(mean_cor)) %>% 
+  ggplot()+stat_eye(aes(LENGTH,mean_cor))
+
+tab %>% unnest(mean_cor) %>% group_by(.iteration,LENGTH, SHUFFLE) %>% 
+  summarise(mean_cor=mean(mean_cor)) %>% 
+  ggplot()+stat_eye(aes(LENGTH,mean_cor))+facet_wrap(~SHUFFLE)
 
 
-
+ttt<-tab %>% unnest(mean_cor) %>% group_by(.iteration) %>% nest() %>% 
+  mutate(model_coefs = map(.x=data,.f=~.x %>% 
+                             lm(mean_cor~(LENGTH+SHUFFLE),data=.) %>% 
+                             coef() %>% t() %>% as_tibble())) %>% 
+  unnest(model_coefs)
 
 
 

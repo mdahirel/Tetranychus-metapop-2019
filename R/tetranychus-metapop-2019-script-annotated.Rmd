@@ -80,37 +80,52 @@ The variables in `raw_data` are as follow:
 - `WEEK`: weeks of data collection (first week coded as 1)
 - `AFEMA`: number of adult females counted on patch, our measure of abundance
 
-In the raw dataset, data are stored so that there is one column for all population sizes, and a column saying which patch it belongs to. This is a tidy way to store info, but not adequate for what we want to do. To fit our multivariate model, we need one column per patch position instead:
+In the raw dataset, data are stored in the long format (one row = one patch observation at one moment of time). We're going to temporarily switch data to the wide format (one row = snapshot of an entire replicate at one moment in time, with one column by patch), so that it's easier to do a few things:
+
+- a few replicates have NAs on *some* patches on one week or so, for some reason (transcription error?). To be safe, let's remove the entire week for the metapop in question, even if most patches were recorded.
+
+- we're going to need a variable representing the total metapopulation size for each replicate and week, and it's just easier to do it from the wide table
 
 ```{r data-reshape}
 
-data <- raw_data %>% 
-  mutate(PATCH2= paste("P", PATCH, sep = "")) %>% 
-  mutate(PATCH2= str_remove(PATCH2, "[.]")) %>% 
+data_wide <- raw_data %>% 
+  mutate(PATCH= paste("P", PATCH, sep = "")) %>% 
+  mutate(PATCH= str_remove(PATCH, "[.]")) %>% 
 ### the two lines above make patches names (a) easier to use as column names (letter as 1st character)
 ### and consistent with brms standards on response variable names (best to avoid dots and underscore,
 ### as some functions will remove them for output names and then matching input and output becomes slightly harder)
-  select(-c(PATCH)) %>%
-  pivot_wider(names_from = PATCH2, values_from = AFEMA) %>%
+  pivot_wider(names_from = PATCH, values_from = AFEMA) %>%
   drop_na() #3 out of ~550 rows contain NAs in at least one patch, discard
 
-
-Npatches <- length(unique(raw_data$PATCH)) ### as a check, counting how many patches there are, should be 9
-### stored as may be useful later
-
 ```
 
-The way the dataset is now, one row = one snapshot of one of the metapopulations (i.e. its state at one time point). We finish by adding a metapopulation total column, for the metapopulation-level model:
+From here, we create two tables. One for the patch-by-patch model, where we switch back to the long format. One for a model where metapopulation size is the response, where we keep the table in its current format and just create a sum column.
 
-```{r metapop-sum}
-data <- data %>% 
-  mutate(METAPOPSUM = select(.,P11:P33) %>% rowSums())
+```{r data-metapop}
+M_data <- data_wide %>% 
+  mutate(METAPOPSUM = select(.,P11:P33) %>% rowSums()) %>% 
+  select(METAPOP_ID,LENGTH,SHUFFLE,REPLICATE,WEEK,METAPOPSUM)%>% 
+  mutate(LENGTH = factor(LENGTH))
 ```
 
+
+```{r data-patch}
+P_data <- data_wide %>% 
+  pivot_longer(P11:P33, names_to = "PATCH", values_to = "AFEMA") %>% 
+  mutate(local_connectedness = 1 + 1 * (PATCH %in% c("P12","P21","P23","P32"))+ 
+                               2 * (PATCH %in% c("P11","P13","P31","P33"))) %>% 
+  mutate(local_connectedness = fct_recode(factor(local_connectedness),
+                                          `center (8 links)` = "1", 
+                                          `side (5 links)` = "2", 
+                                          `corner (3 links)`="3")) %>% 
+  mutate(LENGTH = factor(LENGTH))
+```
+
+(from here onwards, anything prefixed by `P_` refer to the patch-level analysis, anything prefixed by `M_` to the metapopulation-level analysis. Some things will be preface by `P_M_`; these will be metapop-level things estimated from the patch-level model).
 
 ## 1-C Functions for $\alpha$, $\beta$, $\gamma$ variability
 
-One of the aims of this script is to estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a temporal variance-covariance matrix, and a vector of mean population sizes (both must be numeric and contain the same number of patches, of course).
+One of the aims of this script is to estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a temporal variance-covariance matrix, and a vector of mean patch population sizes (both must be numeric and contain the same number of patches, of course).
 
 ```{r wang-loreau}
 
@@ -170,55 +185,44 @@ beta2_wang_loreau <- function(varcorr, means) {
 
 # Part 2 - Fitting the model
 
-## 2A - Model description
+## 2A - Models description
 
-We fit a multivariate generalized linear mixed/multilevel model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance.
+### Patch-level model
 
 The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
 
 $$\begin{equation*}
 N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
-\log(\lambda_{[i,1,1,t]}) = \alpha_{[1,1]\textrm{TREATMENT}[i]} + \beta_{[i,1,1]} + \gamma_{[i,1,1,t]} \\
-...\\
-\log(\lambda_{[i,3,3,t]}) = \alpha_{[3,3]\textrm{TREATMENT}[i]} + \beta_{[i,3,3]} + \gamma_{[i,3,3,t]} \\
 
-\mathbf{}\left[\begin{matrix}
-\beta_{[i,1,1]} \\ ... \\ \beta_{[i,3,3]} 
-\end{matrix}\right] \sim {\textrm{MVNormal}}\left(
+\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{j}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]}\\
 
-\mathbf{}
-\left[\begin{matrix}
-0 \\ ... \\ 0 
-\end{matrix}\right] ,
-\boldsymbol{\Omega}_{\textrm{METAPOP}}\right)\\
+\alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha})\\
+
+\gamma_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{\eta})\\
 
 \left[\begin{matrix}
-\gamma_{[i,1,1,t]} \\ ... \\ \gamma_{[i,3,3,t]} 
+\eta_{[i,1,1,t]} \\ ... \\ \eta_{[i,3,3,t]} 
 \end{matrix}\right] \sim {\textrm{MVNormal}}\left(
 
 \left[\begin{matrix}
 0 \\ ... \\ 0 
 \end{matrix}\right] ,
-\boldsymbol{\Omega}_{\textrm{TIME}[i]}\right)\\
+\boldsymbol{\Omega}_{[i]}\right)\\
 
-\boldsymbol{\Omega}_{\textrm{METAPOP}} = 
+\boldsymbol{\Omega}_{[i]} = 
 \left(\begin{matrix}
-\sigma_{M[1,1]}^2 & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{M[3,3]}^2
-\end{matrix}\right)    \\
-
-\boldsymbol{\Omega}_{\textrm{TIME}[i]} = 
-\left(\begin{matrix}
-\sigma_{T[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{T[i,3,3]} 
+\sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
 \end{matrix}\right)  
-\boldsymbol{R}_{\textrm{TIME}[i]}
+\boldsymbol{R}_{[i]}
 \left(\begin{matrix}
-\sigma_{T[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{T[i,3,3]} 
+\sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
 \end{matrix}\right)    \\
 
 \end{equation*}$$
 
-where $\alpha$ are treatment-specific latent patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\gamma$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}_{\textrm{TIME}[i]}$ the temporal correlation matrix for the replicate $i$.
+where $\alpha$ are treatment-specific latent patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}_{\textrm{TIME}[i]}$ the temporal correlation matrix for the replicate $i$.
 
+We fit a generalized linear mixed/multilevel model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance.
 You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later (we'll come back to these non-linearities later). It is important to note that it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
 
 Similarly, we can write a (simpler) model for the total metapopulation size $M$ (the `METAPOPSUM` column):
@@ -237,35 +241,14 @@ the temporal variance serves again as an observation-level random effect. We don
 
 ## 2B - Implementation - formulas
 
-This is implemented in R as follow. First, for simplicity we create a `TREATMENT` variable combining `LENGTH` and `SHUFFLE`. The `WEEKrpl` variable is useful to fit separate random effects per replicate (this is because in `brms`, random effect levels for each metapop need to have different names if you fit separate random effect matrices per metapopulation):
+This is implemented in R as follows:
 
-```{r treatment-create}
-data <- data %>% 
-  mutate(TREATMENT = interaction(LENGTH, SHUFFLE)) %>% 
-  mutate(WEEKrpl = paste(WEEK, METAPOP_ID))
-```
 
-Then we build the formulas for both the patch by patch multivariate model and the metapopulation total univariate model:
 
-```{r P_formula}
-## see vignette("brms_multivariate") for help on the syntax, in particular the (1|P|random effect) syntax
-## see ?gr() for help too if needed
-P_formula <- mvbf(
-      bf(P11 ~ 0 + TREATMENT + (1 | METAPOP_ID) + (1 | P | gr(METAPOP_ID:WEEK, by = METAPOP_ID)), family = poisson),
-      bf(P12 ~ 0 + TREATMENT + (1 | METAPOP_ID) + (1 | P | gr(METAPOP_ID:WEEK, by = METAPOP_ID)), family = poisson),
-      bf(P13 ~ 0 + TREATMENT + (1 | METAPOP_ID) + (1 | P | gr(METAPOP_ID:WEEK, by = METAPOP_ID)), family = poisson),
-      bf(P21 ~ 0 + TREATMENT + (1 | METAPOP_ID) + (1 | P | gr(METAPOP_ID:WEEK, by = METAPOP_ID)), family = poisson),
-      bf(P22 ~ 0 + TREATMENT + (1 | METAPOP_ID) + (1 | P | gr(METAPOP_ID:WEEK, by = METAPOP_ID)), family = poisson),
-      bf(P23 ~ 0 + TREATMENT + (1 | METAPOP_ID) + (1 | P | gr(METAPOP_ID:WEEK, by = METAPOP_ID)), family = poisson),
-      bf(P31 ~ 0 + TREATMENT + (1 | METAPOP_ID) + (1 | P | gr(METAPOP_ID:WEEK, by = METAPOP_ID)), family = poisson),
-      bf(P32 ~ 0 + TREATMENT + (1 | METAPOP_ID) + (1 | P | gr(METAPOP_ID:WEEK, by = METAPOP_ID)), family = poisson),
-      bf(P33 ~ 0 + TREATMENT + (1 | METAPOP_ID) + (1 | P | gr(METAPOP_ID:WEEK, by = METAPOP_ID)), family = poisson)
-)
 
-M_formula <- bf(METAPOPSUM ~ 0 + TREATMENT + (1|METAPOP_ID) + (1|METAPOP_ID:WEEK), family = poisson)
-```
 
-note the `~0 + TREATMENT`, rather than `~TREATMENT` syntax in the fixed effects. It’s just a writing trick so we don't need to deal with contrasts and to reduce the quantity of post-processing calculations needed, and also to be sure all prior for latent means have the same precision. See Schielzeth [-@schielzethSimpleMeansImprove2010] and McElreath [-@mcelreathStatisticalRethinkingBayesian2020].  
+
+It’s just a writing trick so we don't need to deal with contrasts and to reduce the quantity of post-processing calculations needed, and also to be sure all prior for latent means have the same precision. See Schielzeth [-@schielzethSimpleMeansImprove2010] and McElreath [-@mcelreathStatisticalRethinkingBayesian2020].  
 
 
 ## 2C - Implementation - choosing priors
@@ -291,8 +274,7 @@ P_prior <- c(
 M_prior <- c(
       ### PRIORS FOR THE METAPOP LEVEL MODEL
     set_prior("normal(4.2,1)", class = "b"),
-    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID"),
-    set_prior("normal(0,0.5)", class = "sd", group = "METAPOP_ID:WEEK")
+    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID") ###add prior forshape related variables
 )
 ```
 
@@ -308,16 +290,23 @@ if(file.exists(here("R_output","models.Rdata"))){
   }else
     {
 
-P_mod <- brm(P_formula, data = data, 
-           iter = N_iter, warmup = N_warmup, chains = N_chains, 
-           prior = P_prior, 
-           seed = 42,
-           control = list(adapt_delta = 0.9), #default is 0.8; adapt_delta and other controls can be adjusted if needed
-           backend= "cmdstanr")
+mod <- brm(
+  AFEMA~(local_connectedness+LENGTH)+SHUFFLE+
+    (1|METAPOP_ID/PATCH)+(0+PATCH|gr(METAPOP_ID:WEEK,by=METAPOP_ID)),
+  family=poisson,
+          prior=c(set_prior("normal(2,1)",class="Intercept"), ### intercept is max connectedness local+landscape, + control
+                  set_prior("normal(0,1)",class="b"),
+                  set_prior("normal(0,1)",class="sd"),
+                  set_prior("normal(0,0.5)",class="sd",group="METAPOP_ID:WEEK"),
+                  set_prior("lkj(2)",class="cor")),
+          iter=200,warmup=100,chains=4,seed=42,data=P_data,
+          control=list(adapt_delta=0.8,max_treedepth=15),
+          backend="cmdstanr")
 
 
-M_mod <- brm(M_formula, data = data, 
-           iter = N_iter, warmup = N_warmup, chains = N_chains, 
+M_mod <- brm(bf(METAPOPSUM~LENGTH+SHUFFLE+(1|METAPOP_ID),
+                shape~LENGTH+SHUFFLE+(1|METAPOP_ID), family=negbinomial), data = M_data, 
+           iter = 2000, warmup = 1000, chains = N_chains, 
            prior = M_prior, 
            seed = 42,
            control = list(adapt_delta = 0.9), #default is 0.8; adapt_delta and other controls can be adjusted if needed
