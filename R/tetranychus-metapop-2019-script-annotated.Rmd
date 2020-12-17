@@ -40,6 +40,7 @@ This script uses the Stan language [@carpenterStanProbabilisticProgramming2017; 
 library(cmdstanr) ## Stan backend (another)
 library(brms) ## the interface we are using
 
+
 library(tidyverse)
 library(bayesplot)
 library(tidybayes)
@@ -55,8 +56,8 @@ library(here)
 # rstan_options(auto_write = TRUE) #for rstan
 options(mc.cores = 2) ## reduce/increase depending on cores available
 N_chains <- 4
-N_warmup <- 100   ## used for publication: 10000 ## 200 is enough for tests
-N_iter <- N_warmup + 100  ## recommended for publication-level quality: 2000 iterations post warmup when all chains combined 
+N_warmup <- 2000   ## used for publication: 10000 ## 200 is enough for tests
+N_iter <- N_warmup + 2000  ## recommended for publication-level quality: 2000 iterations post warmup when all chains combined 
 ## Nwarmup + 200 is probably good enough for tests
 
 ```
@@ -101,14 +102,6 @@ data_wide <- raw_data %>%
 
 From here, we create two tables. One for the patch-by-patch model, where we switch back to the long format. One for a model where metapopulation size is the response, where we keep the table in its current format and just create a sum column.
 
-```{r data-metapop}
-M_data <- data_wide %>% 
-  mutate(METAPOPSUM = select(.,P11:P33) %>% rowSums()) %>% 
-  select(METAPOP_ID,LENGTH,SHUFFLE,REPLICATE,WEEK,METAPOPSUM)%>% 
-  mutate(LENGTH = factor(LENGTH))
-```
-
-
 ```{r data-patch}
 P_data <- data_wide %>% 
   pivot_longer(P11:P33, names_to = "PATCH", values_to = "AFEMA") %>% 
@@ -118,10 +111,33 @@ P_data <- data_wide %>%
                                           `center (8 links)` = "1", 
                                           `side (5 links)` = "2", 
                                           `corner (3 links)`="3")) %>% 
-  mutate(LENGTH = factor(LENGTH))
+  mutate(LENGTH = factor(LENGTH)) 
+
+## adding dummy centered variables
+P_data <- P_data %>% 
+  mutate(is.reshuffled = as.numeric(SHUFFLE =="R") - mean(as.numeric(SHUFFLE =="R"))) %>% 
+  mutate(is.local5 = as.numeric(local_connectedness =="side (5 links)") - mean(as.numeric(local_connectedness =="side (5 links)")),
+         is.local3 = as.numeric(local_connectedness =="corner (3 links)") - mean(as.numeric(local_connectedness =="corner (3 links)")),
+         is.landscape8 = as.numeric(LENGTH =="8") - mean(as.numeric(LENGTH =="8")),
+         is.landscape16 = as.numeric(LENGTH =="16") - mean(as.numeric(LENGTH =="16")))
 ```
 
-(from here onwards, anything prefixed by `P_` refer to the patch-level analysis, anything prefixed by `M_` to the metapopulation-level analysis. Some things will be preface by `P_M_`; these will be metapop-level things estimated from the patch-level model).
+
+```{r data-metapop}
+M_data <- data_wide %>% 
+  mutate(METAPOPSUM = select(.,P11:P33) %>% rowSums()) %>% 
+  select(METAPOP_ID,LENGTH,SHUFFLE,REPLICATE,WEEK,METAPOPSUM)%>% 
+  mutate(LENGTH = factor(LENGTH))
+
+## adding dummy centered variables
+M_data <- M_data %>% 
+  mutate(is.reshuffled = as.numeric(SHUFFLE =="R") - mean(as.numeric(SHUFFLE =="R"))) %>% 
+  mutate(is.landscape8 = as.numeric(LENGTH =="8") - mean(as.numeric(LENGTH =="8")),
+         is.landscape16 = as.numeric(LENGTH =="16") - mean(as.numeric(LENGTH =="16")))
+
+```
+
+(from here onwards, anything prefixed by `P_` refers to the patch-level analysis, anything prefixed by `M_` to the metapopulation-level analysis. Some things will be prefaced by `P_M_`; these will be metapop-level things estimated from the patch-level model).
 
 ## 1-C Functions for $\alpha$, $\beta$, $\gamma$ variability
 
@@ -189,16 +205,22 @@ beta2_wang_loreau <- function(varcorr, means) {
 
 ### Patch-level model
 
+We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
+You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches form the same replicate can be correlated. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later (we'll come back to these non-linearities later). It is important to note that the presence of the temporal matrices it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
+
+Intuition behind this formulation (latent residuals via ORLE + specify covariance structure) is the same as in this comment by Paul Bürkner (https://github.com/paul-buerkner/brms/issues/600#issuecomment-511677732) 
+
+
 The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
 
 $$\begin{equation*}
-N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
+N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}), \\
 
-\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{j}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]}\\
+\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j,x,y}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},\\
 
-\alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha})\\
+\alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha}),\\
 
-\gamma_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{\eta})\\
+\gamma_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{\eta}),\\
 
 \left[\begin{matrix}
 \eta_{[i,1,1,t]} \\ ... \\ \eta_{[i,3,3,t]} 
@@ -207,7 +229,7 @@ N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
 \left[\begin{matrix}
 0 \\ ... \\ 0 
 \end{matrix}\right] ,
-\boldsymbol{\Omega}_{[i]}\right)\\
+\boldsymbol{\Omega}_{[i]}\right),\\
 
 \boldsymbol{\Omega}_{[i]} = 
 \left(\begin{matrix}
@@ -216,65 +238,116 @@ N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}) \\
 \boldsymbol{R}_{[i]}
 \left(\begin{matrix}
 \sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
-\end{matrix}\right)    \\
+\end{matrix}\right),    \\
 
 \end{equation*}$$
 
-where $\alpha$ are treatment-specific latent patch intercepts, $\beta$ metapopulation-specific deviations from these intercepts, $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities), $\boldsymbol{\Omega}$ the relevant covariance matrices and $\boldsymbol{R}_{\textrm{TIME}[i]}$ the temporal correlation matrix for the replicate $i$.
+where $\beta$ are the fixed effects (with \beta_{0} the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix.
 
-We fit a generalized linear mixed/multilevel model to the abundance data, with one submodel for each of the 9 patches. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes). It also includes a time random effect, to account for temporal patch variance-covariance.
-You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later (we'll come back to these non-linearities later). It is important to note that it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
+### Meta-population model
 
-Similarly, we can write a (simpler) model for the total metapopulation size $M$ (the `METAPOPSUM` column):
+
+Similarly, we can write a (simpler) model for the total metapopulation size $M$ (the `METAPOPSUM` column). Because there are no correlations to worry about, we can use a negative binomial model here to model the within-replicate temporal variation:
 
 $$
 \begin{equation*}
-M_{[i,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,t]}) \\
-\log(\lambda_{[i,t]}) = \alpha_{\textrm{TREATMENT}[i]} + \beta_{[i]} + \gamma_{[i,t]} \\
+M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}) \\
+\log(\lambda_{[i]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j}} + \gamma_{[i]},\\
 
-\beta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\beta}) \\
-\gamma_{[i,t]} \sim \mathrm{Normal}(0, \sigma_{\gamma})
+\log(\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},\\
 
+\gamma_{[i]} \sim \mathrm{Normal}(0, \sigma_{\gamma}),\\
+
+\eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).\\
 \end{equation*}
 $$
-the temporal variance serves again as an observation-level random effect. We don't need to estimate it in a replicate way at the metapopulation-level, since at that level, we don't have the "patch x,y is not necessarily the same patch across replicates" problem anymore.
+Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similalry, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape.
 
 ## 2B - Implementation - formulas
 
-This is implemented in R as follows:
+### Patch-level model
 
+```{r P_formulas}
+P_formula <- bf(
+  AFEMA~(is.local5 + is.local3 + is.landscape8 + is.landscape16)*is.reshuffled+
+    (1|METAPOP_ID/PATCH)+(0+PATCH|gr(METAPOP_ID:WEEK,by=METAPOP_ID)),
+  family=poisson)
+```
 
+### Metapopulation model
 
+```{r M_formulas}
+M_formula  <- bf(
+  METAPOPSUM~(is.landscape8 + is.landscape16)*is.reshuffled+(1|METAPOP_ID),
+  shape~(is.landscape8 + is.landscape16)*is.reshuffled+(1|METAPOP_ID),
+  family=negbinomial)
 
-
-
-It’s just a writing trick so we don't need to deal with contrasts and to reduce the quantity of post-processing calculations needed, and also to be sure all prior for latent means have the same precision. See Schielzeth [-@schielzethSimpleMeansImprove2010] and McElreath [-@mcelreathStatisticalRethinkingBayesian2020].  
-
+```
 
 ## 2C - Implementation - choosing priors
 
-We then select our priors. 
+We then select our priors. Because the patch-level model is complex, with lots of moving parts relative to the amount of data, we can't just use "usual" weakly informative priors; we have to think a little harder to avoid a prior pushing the model towards blatantly wrong extreme values. Luckily we have prior data in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015], so we're going to be able to rely on explicit prior knowledge
 
-For the fixed effects coefficients (corresponding to latent, i.e. on log scale, grand means of single patch population size), I based myself roughly on the entire distribution of non-zero population densities in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015] (multiplied to account for our patch size: 5 by 5 cm). Note that the prior we use is slightly wider than what could be done based on density distribution in De Roissart *et al.* (which would be something like $\textrm{Normal}(1.8,0.9)$ for one patch), mostly to have round numbers, but also to allow for a slightly wider prior.  We used a $\textrm{Normal}(4.2,1)$ for the corresponding parameter for the metapopulation-level model; this correspond roughly to a multiplication by 9 of the prior mean compared to the prior chosen for the patch-level approach, and there are 9 patches in each metapopulation.
+```{r import_prior_data}
+prior_data <- read_csv(here("data","prior_data.csv"))
+```
 
-For the random effects, we started with weakly informative half-normal priors [@mcelreathStatisticalRethinkingBayesian2020]. We placed slightly stronger priors on the temporal variances (observation-level random effects). These are individual patch-specific, so the idea is that if we don't do that, one rare outlier in a patch time series can have an undue influence and drive the variance too high. Given the temporal variances are used to predict the observed-scale means, that would lead to artificially inflated predicted means downstream.
+(This is a copy of the relevant columns in the Dryad data in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016], see there and README for details).
+
+Densities are given in mites per cm^2. We're going to use the adult female column `AvgFem`:
+
+```{r filter_prior_data}
+prior_data <- prior_data %>% 
+  group_by(MP,P,Treatment,Date) %>% 
+  mutate(total=AvgFem+AvgEggs+AvgMal+AvgJuv) %>% ## all the mites on the patch at time t
+  group_by(MP,P,Treatment) %>%  ##metapop plus patch ID uniquely define a patch
+  mutate(was_populated = mean(total)>0) %>% ## we exclude all patches that were NEVER populated
+  ungroup() %>% 
+  filter(was_populated==TRUE)
+```
+
+Now we're going to use these data to get very very rough prior info
+```{r distri_prior_data}
+
+log(median(prior_data$AvgFem*25))   #the \mu of a lognormal with same observed median as prior data
+log(median(prior_data$AvgFem*25*9))
+
+log(1 + var(prior_data$AvgFem)/mean(prior_data$AvgFem)^2) #the \sigma^2 of a lognormal with same observed mean and variance
+```
+
+OK, how does this help set us reasonable priors?
+
+First, there are five types of parameters:
+
+- intercepts for the fixed effect latent mean
+- random effect standard deviation
+- intercepts for the shape parameter (Metapop-model only)
+- fixed effects coefficients
+- correlation matrix
+
+For the last three, we're just going to use general purpose weakly informative priors as in [@mcelreathStatisticalRethinkingBayesian2020]. But we're going to need better for the other two. A good but broad prior for the fixed effect latent mean would be "any value within the distribution of observed prior values" (so Normal(3, 1) would work for the patch-level, Normal(5,1) for the metapop).
+
+For the random effect SDs, one can use the total log-scale variance in prior data as a guide, so roughly 1. The sum of replicate level variance, patch-level variance and within-patch level variance should then be around 0.9-1. So the typical prior variance for each of the 3 components should be around 0.3, leading to prior SDs around 0.5-0.55 as a pretty typical value.
+
+(note: specifying slightly larger priors is not dramatic and does not change outcome of among-treatment comparisons, but tends to shift all predicted means on the observed scale a bit higher than what is actually observed.)
 
 ```{r prior-setting}
 P_prior <- c(
     ### PRIORS FOR THE PATCH-LEVEL MODEL
-    set_prior("normal(2,1)", class = "b", 
-              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID", 
-              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
-    set_prior("normal(0,0.5)", class = "sd", group="METAPOP_ID:WEEK", 
-              resp = c("P11", "P12", "P13", "P21", "P22", "P23", "P31", "P32", "P33")),
+    set_prior("normal(2.8,1)", class = "Intercept"),
+    set_prior("normal(0,1)", class = "b"),
+    set_prior("normal(0,0.5)", class = "sd"),
     set_prior("lkj(2)", class = "cor") # mildly skeptical of very high correlations (positive or negative)
   )
 
 M_prior <- c(
       ### PRIORS FOR THE METAPOP LEVEL MODEL
-    set_prior("normal(4.2,1)", class = "b"),
-    set_prior("normal(0,1)", class = "sd", group = "METAPOP_ID") ###add prior forshape related variables
+    set_prior("normal(5,1)", class = "Intercept"),
+    set_prior("normal(0,1)", class = "b"),
+    set_prior("normal(0,1)", class="Intercept",dpar="shape"),
+    set_prior("normal(0,1)", class="b",dpar="shape"),
+    set_prior("normal(0,0.5)", class = "sd", dpar="shape"),
+    set_prior("normal(0,0.5)", class = "sd")
 )
 ```
 
@@ -283,34 +356,33 @@ M_prior <- c(
 We can now fit the models based on the choices we made earlier
 
 ```{r model_fitting}
-if(file.exists(here("R_output","models.Rdata"))){
+if(file.exists(here("R_output","P_mod.Rdata"))){
   # this if-else statement is avoid re-fitting a model if there is already one existing in R_output
   # to override, re-run the model and re-save manually by selecting only the relevant code lines (or delete the Rdata object before relaunching this code chunk)
-  load(here("R_output","models.Rdata"))
+  load(here("R_output","P_mod.Rdata"))
   }else
     {
 
-mod <- brm(
-  AFEMA~(local_connectedness+LENGTH)+SHUFFLE+
-    (1|METAPOP_ID/PATCH)+(0+PATCH|gr(METAPOP_ID:WEEK,by=METAPOP_ID)),
-  family=poisson,
-          prior=c(set_prior("normal(2,1)",class="Intercept"), ### intercept is max connectedness local+landscape, + control
-                  set_prior("normal(0,1)",class="b"),
-                  set_prior("normal(0,1)",class="sd"),
-                  set_prior("normal(0,0.5)",class="sd",group="METAPOP_ID:WEEK"),
-                  set_prior("lkj(2)",class="cor")),
-          iter=200,warmup=100,chains=4,seed=42,data=P_data,
-          control=list(adapt_delta=0.8,max_treedepth=15),
-          backend="cmdstanr")
+P_mod <- brm(formula=P_formula, prior=P_prior, data = P_data, 
+           iter=N_iter,warmup=N_warmup,chains=N_chains,
+           seed=42, control=list(adapt_delta=0.9,max_treedepth=15),
+           backend="cmdstanr")
+save(list=c("P_mod"), file=here("R_output","P_mod.Rdata"))
+}
+```
 
 
-M_mod <- brm(bf(METAPOPSUM~LENGTH+SHUFFLE+(1|METAPOP_ID),
-                shape~LENGTH+SHUFFLE+(1|METAPOP_ID), family=negbinomial), data = M_data, 
-           iter = 2000, warmup = 1000, chains = N_chains, 
-           prior = M_prior, 
-           seed = 42,
-           control = list(adapt_delta = 0.9), #default is 0.8; adapt_delta and other controls can be adjusted if needed
+```{r }
+if(file.exists(here("R_output","M_mod.Rdata"))){
+  load(here("R_output","M_mod.Rdata"))
+  }else{
+M_mod <- brm(formula=M_formula, prior=M_prior, data = M_data, 
+           iter = 4000, warmup = 2000, chains = N_chains, seed = 42,
+           control = list(adapt_delta = 0.9),
            backend= "cmdstanr")
+
+save(list=c("M_mod"), file=here("R_output","M_mod.Rdata"))
+}
 
 ## with rstan as backend, the model *may* throw some some rhats=NA warnings on exit
 ## they can (for once) be safely ignored: related issue: https://github.com/paul-buerkner/brms/issues/865
@@ -320,24 +392,21 @@ M_mod <- brm(bf(METAPOPSUM~LENGTH+SHUFFLE+(1|METAPOP_ID),
 ## you can check that only parameters that should be constant give NA warnings through rhat(mod)
 ## and quickly look at the rhats:
 ## hist(rhat(mod));abline(v=1.01,col="red")
-save(list=c("P_mod","M_mod"), file=here("R_output","models.Rdata"))
-}
 ```
 
 Note that it can take some time to finish (around 2000-4000 iterations/h/core on my laptop).
 
 ```{r model_summary}
-summary(mod)  #look at Rhat and ESS both tail and bulk
+summary(P_mod)  #look at Rhat and ESS both tail and bulk
 ```
 
 You also need to check that the model can reproduce the data well, through posterior predictive checks [@gabryVisualizationBayesianWorkflow2019]
 (here, given we have observation-level random effects, it should be OK)
 
 ```{r model_ppchecks}
-
-pp_check(mod, resp = "P11", nsamples = 20)
+pp_check(P_mod, nsamples = 20)
 ## can the model generate the observed data? (there are many ppcheck possibles, see the help of the bayesplot package)
-## in a multivariate model, you need to specify the response (so here which patch)
+## for P_mod, basic pp_checks will return perfect fits, since there are obs-level random effects
 ```
 
 # Part 3 - Obtaining key metrics from model output
@@ -346,159 +415,71 @@ pp_check(mod, resp = "P11", nsamples = 20)
 
 Once we have fitted and chosen a model, it's time to extract what we need from it. 
 
-There's going to be a lot of variables, so we're gonna try to follow this naming convention to keep things clear:
+There's going to be a lot of variables, so we're gonna keep following our naming convention to keep things clear:
 
 - columns or objects prefixed by `P_` refer to the patch by patch model
 - ...prefixed by `M_` to the metapop-level model
-- names containing `rpl` are for things related to the among-replicates level of variation
-- names with `time` for the within-replicate (temporal) level of variation
 
-With that out of the way, let's start by extracting all the fixed effects:
+### Patch-level model
 
-```{r P_M_extract-fixef}
-P_M_fixef <- fixef(mod, summary = FALSE) %>% ### all model fixed effects, with one column = one "variable" * treatment combination
-  as_tibble() %>%
-  mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
-  pivot_longer(-.iteration) %>%        ### we pivot so we can split the "variable*treatment" into patch ID and treatment variables
-  mutate(variable=str_extract(name,"P11|P12|P13|P21|P22|P23|P31|P32|P33|METAPOPSUM"),
-         LENGTH=as.numeric(str_extract(name,"4|8|16")),
-         SHUFFLE=str_extract(name,"NO$|R$")) %>%  # $ : end of string
-  select(-name) %>%
-  pivot_wider(values_from=value,names_from=variable) %>%  ###we repivot back so that 1 column per patch
-  group_by(.iteration, LENGTH, SHUFFLE) %>%  ### we group and nest by iteration (with treatment variables along for the ride)
-  nest(P_fixef = c(P11:P33)) %>% 
-  mutate(P_fixef = map(.x=P_fixef, .f = ~.x %>% unlist())) %>%   #convert list column from tibbles to vectors for faster calculations
-  rename(M_fixef = METAPOPSUM)
-```
+Let's start by extracting the total temporal covariance matrix
 
-We end up with a tibble where one row = one posterior iteration of one replicate metapopulation. Where there are more than one value per row per "thing" of interest (like with patch-level fixed effects: 9 patches), we use list-columns to store them.
-
-Let's continue with the among-metapopulation random effects (not the variances):
-
-```{r P_extract-ranef-rpl}
-### we then extract the among-metapop deviations for the patch by patch model (needed for estimating alpha beta gamma):
-P_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID %>% 
-  array_tree(margin=c(1,2)) %>% ## convert array to list, enlisting by metapop nested in iteration
-  tibble() %>% ## we "flatten" the list, iteration become rows of new tibble
-  rename(., P_ranef_rpl=".") %>% 
-  mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
-  unnest_longer(P_ranef_rpl, indices_to = "METAPOP_ID") %>% 
-  mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
-         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
-```
-
-and the actual among-metapopulation variances (converted to VCV matrix format):
-
-```{r P_extract-vcv-rpl}
-P_vcv_rpl <- VarCorr(mod, summary = FALSE)$METAPOP_ID$sd %>% 
-  array_tree(margin=1) %>% 
-  tibble() %>% 
-  rename(., P_vcv_rpl_latent=".") %>% 
-  mutate(.iteration = 1:dim(.)[1]) %>% 
-  mutate(P_vcv_rpl_latent=map(.x=P_vcv_rpl_latent,
-                       .f=function(.x){diag(.x^2)}))
-```
-
-
-Last thing for the patch level, we need to extract the temporal variance-covariance matrices. We need to do this in two steps. First, we extract the content of the VCV slot:
-
-```{r P_extract-vcv-time1}
+```{r}
 memory.limit(40000) #### if needed, a little memory boost to handle the full vcv matrix in final model
-P_vcv_time_global <- VarCorr(mod, summary = FALSE)$WEEKrpl$cov
-```
+P_vcv_time_global <- VarCorr(P_mod, summary = FALSE)$`METAPOP_ID:WEEK`$cov
 
-Because of the way the model is structured, **all** the variances-covariances that involve `WEEKrpl` are stored in one big matrix, which include across replicate covariances (like patch 1.1 of replicate 1 to patch 1.2 of replicate , for instance _ these are of course 0 by design). We need to split it into its replicate components:
-
-```{r P_extract-vcv-time2}
-P_vcv_time_latent<-P_ranef_rpl %>% 
-  select(.iteration,METAPOP_ID) %>% 
+P_vcv_time_latent<-P_data %>% 
+  select(METAPOP_ID,LENGTH,SHUFFLE) %>% 
+  expand_grid(.iteration = 1:(N_chains * (N_iter-N_warmup))) %>% 
+  distinct() %>% 
   mutate(P_vcv_time_latent=map2(.x=.iteration,.y=METAPOP_ID,
                                 .f=function(iter=.x,metapop=.y,source=P_vcv_time_global){
                                   include <- colnames(source)
                                   include <- include[str_detect(include, pattern = metapop)]
                                   return(source[iter,include,include])
                                 }))
-
-rm(P_vcv_time_global);gc() ##we remove the big global VCV from memory since we don't need it anymore
-
 ```
 
+and the corresponding latent_intercepts
 
-Now we can move to extracting things from the metapopulation size model, where things are a bit simpler.
-
-First the among-replicate random effects:
-```{r M_extract-ranef-rpl}
-### we do the same for the metapop sum model:
-M_ranef_rpl<- ranef(mod, summary = FALSE)$METAPOP_ID2 %>%
-  array_tree(margin=c(1)) %>% ## convert array to list, enlisting by metapop nested in iteration
-  tibble() %>% ## we "flatten" the list, iteration become rows of new tibble
-  rename(., M_ranef_rpl=".") %>% 
-  mutate(M_ranef_rpl = map(.x = M_ranef_rpl,
-                                     .f = ~ t(.x) %>% as.data.frame() %>% c())) %>% 
-  mutate(.iteration = 1:dim(.)[1]) %>% ### we put the implicit iteration # into an explicit column
-  unnest_longer(M_ranef_rpl, indices_to = "METAPOP_ID") %>% 
-  mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
-         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
+```{r}
+P_latent_intercepts <- P_data %>% 
+  select(METAPOP_ID,SHUFFLE,LENGTH,local_connectedness,PATCH, 
+         is.local5, is.local3, is.landscape8, is.landscape16, is.reshuffled) %>% 
+  distinct() %>% 
+  add_fitted_draws(P_mod,re_formula=~(1|METAPOP_ID/PATCH),scale="linear") %>% 
+  ungroup() %>% 
+  select(METAPOP_ID,SHUFFLE,LENGTH,PATCH,.iteration=.draw,.value) %>% 
+  pivot_wider(values_from=.value,names_from=PATCH) %>% 
+  group_by(METAPOP_ID,SHUFFLE,LENGTH,.iteration) %>% 
+  nest(data=c(P11,P12,P13,P21,P22,P23,P31,P32,P33)) %>% 
+  rename(P_latent_intercept="data") %>% 
+  mutate(P_latent_intercept=map(.x=P_latent_intercept,
+                                .f=~.x %>% unlist()))
 ```
 
-Then the among-replicate variance:
-```{r M_extract-var-rpl}
-M_var_rpl <- VarCorr(mod,summary=FALSE)$METAPOP_ID2$sd %>% 
-  as.data.frame() %>% 
-  mutate(.iteration = 1:dim(.)[1]) %>% 
-  mutate(M_var_rpl_latent = METAPOPSUM_Intercept^2) %>% 
-  select(.iteration,M_var_rpl_latent)
-```
-
-And the replicate by replicate temporal variances:
-
-```{r M_extract-var-time}
-M_var_time <- VarCorr(mod,summary=FALSE)$WEEKrpl2$sd %>%
-  as.data.frame() %>% 
-  mutate(.iteration = 1:dim(.)[1]) %>% 
-  pivot_longer(-.iteration) %>% 
-  mutate(M_var_time_latent = value^2) %>% 
-  mutate(METAPOP_ID = str_remove(name,"METAPOPSUM_Intercept:METAPOP_ID2")) %>% 
-  select(METAPOP_ID, M_var_time_latent, .iteration) %>% 
-  mutate(LENGTH=as.numeric(str_extract(METAPOP_ID,"^4|^8|^16")),  ## ^: start of string
-         SHUFFLE=str_extract(METAPOP_ID,"NO|R"))
-```
-
-
-Now we can merge all of this in one table (still with "one row = one iteration for one replicate metapop"):
 
 ```{r merge-coefficients-tables}
-tab <- P_ranef_rpl %>% 
-  left_join(P_vcv_rpl) %>% 
-  left_join(P_vcv_time_latent) %>% 
-  left_join(M_ranef_rpl) %>% 
-  left_join(M_var_rpl) %>% 
-  left_join(M_var_time) %>%  
-  left_join(P_M_fixef)
+P_tab <- P_latent_intercepts %>% 
+  left_join(P_vcv_time_latent) 
 ```
 
 ## Estimation of key quantities
 
-We first use information on patch-level fixed effects and patch-level temporal variances to estimate data-scale patch-level means. Because we allow within-patch variance to vary among replicates (and so among treatments), we can't infer anything about *mean* differences among treatments from fixed effects only, as the data-scale mean depends on both latent mean and latent within-patch variance [see @villemereuilGeneralMethodsEvolutionary2016]. Sp we need to first estimate patch means from latent means and variances, and then average across patches within replicates:
+We first use information on patch-level fixed effects and patch-level temporal variances to estimate data-scale patch-level means. Because we allow within-patch variance to vary among replicates (and so among treatments), we can't infer anything about *mean* differences among treatments from fixed effects only, as the data-scale mean depends on both latent mean and latent within-patch variance [see @villemereuilGeneralMethodsEvolutionary2016]. So we need to first estimate patch means from latent means and variances, and then average across patches within replicates:
 
 ```{r P_means}
-tab <- tab  %>% 
-  mutate(P_latent_intercept = map2(
-    .x = P_fixef, .y = P_ranef_rpl,
-    .f= function(.x,.y){.x + .y}
-  )) %>% 
+P_tab <- P_tab  %>%  
   mutate(P_pred = map2( ## patch by patch patch-level average
     .x = P_latent_intercept, .y = P_vcv_time_latent,
     .f = ~ exp(.x + diag(.y)/2)  ## analytic form for the Poisson model, see annex villemereuil
   )) %>% 
-  mutate(P_geom_mean = map(.x=P_fixef, .f = ~exp(.x))) %>% 
   ### we then average within metapops:
   mutate(P_mean_all = map(.x = P_pred, .f = ~mean(.x))) %>% 
   mutate(P_mean_corners = map(.x = P_pred, .f = ~mean(.x[c(1,3,7,9)]))) %>% 
   mutate(P_mean_center = map(.x = P_pred, .f = ~mean(.x[c(5)]))) %>% 
-  mutate(P_mean_sides = map(.x = P_pred, .f = ~mean(.x[c(2,4,6,8)]))) %>% 
-  mutate(P_geom_mean_all = map(.x = P_geom_mean, .f = ~mean(.x))) %>% 
-  unnest(c(P_mean_all, P_mean_corners,P_mean_center,P_mean_sides, P_geom_mean_all)) 
+  mutate(P_mean_sides = map(.x = P_pred, .f = ~mean(.x[c(2,4,6,8)]))) %>%
+  unnest(c(P_mean_all, P_mean_corners,P_mean_center,P_mean_sides)) 
 ```
 
 Now, to estimate $\alpha$, $\beta$ and $\gamma$ variabilities, we need to get the temporal variance-covariance matrices from the latent scale to the data scale [see @villemereuilGeneralMethodsEvolutionary2016]. Ideally we'd use the `QGmv...` functions in the `QGglmm` package, but they become terribly inefficient in memory use once the multivariate model has more than 5 variables (and we have 9). It's because the multivariate functions integrate with `cubature` rather than using the closed form version, (if I understood correctly) because they have to work even for cases where the different variables are from different families. But we're lucky because our 9 variables have the same family, so it's actually very easy to do it manually using the closed form formulas in the source papers!! 
@@ -506,7 +487,7 @@ Now, to estimate $\alpha$, $\beta$ and $\gamma$ variabilities, we need to get th
 The first step is to estimate a $\psi$ matrix, a diagonal matrix containing for each variable its $\psi$ value. And actually, we've already estimated it, since for a Poisson model, $\psi$ is the predicted mean (i.e. `P_pred` for us). So we just have to diagonalise it. Then we can use it to convert the latent scale temporal VCV to the observed scale, and finally use these VCVs and the predicted means to estimate the $\alpha$, $\beta$ and $\gamma$ variabilities:
 
 ```{r P_variabilities}
-tab <- tab %>% 
+P_tab <- P_tab %>% 
   mutate(P_psi = map(.x = P_pred, .f = function(.x){diag(.x)})) %>% 
   mutate(P_vcv_time_obs = map2(.x = P_psi, .y= P_vcv_time_latent,
                                 .f = ~ (.x %*% .y %*% t(.x))
@@ -517,56 +498,17 @@ tab <- tab %>%
   ) %>% 
   unnest(cols=c(P_alpha,P_gamma)) %>% 
   mutate(
-    P_beta1 = P_alpha / P_gamma, P_beta2 = P_alpha - P_gamma
+    P_beta1 = P_alpha / P_gamma, P_phi = P_gamma/P_alpha, P_beta2 = P_alpha - P_gamma
   )
 ```
 
+```{r for-export}
 
-And we can finish by doing all of the above for the metapopulation-level model (at least the things that are meaningful to do). Here we can directly use the `QGparams` function, since it uses the closed form formulas we used above:
+P_tab <- P_tab %>% ungroup() %>% select(-c(P_vcv_time_latent, P_latent_intercept, P_pred, P_psi, P_vcv_time_obs))
 
-```{r M_means}
-tab<- tab %>% 
-  mutate(M_pred = exp(M_fixef + (M_var_rpl_latent + M_var_time_latent)/2)) %>% 
-  mutate(M_latent_intercept = M_fixef + M_ranef_rpl) %>% 
-  mutate(M_alpha = map2(.x = M_latent_intercept, .y = M_var_time_latent,
-                        .f = function(.x,.y){
-                          M_obsscale = QGparams(mu=.x, var.a = .y, var.p = .y, model="Poisson.log", verbose=FALSE)
-                          CV_L = sqrt(M_obsscale$var.a.obs)/M_obsscale$mean.obs
-                          return(CV_L^2)
-                          })) %>% 
-  unnest(M_alpha)
+write_csv(x = P_tab, file = here("R_output","P_tab.csv"))
 ```
 
-
-## Averaging across replicates
-
-To conclude, we just need to to get, for each treatment, iteration by iteration, the average of every quantity of interest estimated at the replicate level:
-
-```{r P_summary}
-P_summary <- tab %>% 
-  group_by(.iteration, SHUFFLE, LENGTH) %>% 
-  summarise(P_mean_all = mean(P_mean_all), 
-            P_mean_corners = mean(P_mean_corners), 
-            P_mean_sides = mean(P_mean_sides), 
-            P_mean_center = mean(P_mean_center), 
-            P_geom_mean = mean(P_geom_mean_all),
-            P_alpha = mean(P_alpha), 
-            P_beta1 = mean(P_beta1), 
-            P_beta2 = mean(P_beta2), 
-            P_gamma = mean(P_gamma)) %>% 
-  ungroup() %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R"))
-```
-
-
-```{r M_summary}
-M_summary <- tab %>% 
-  group_by(.iteration,SHUFFLE,LENGTH) %>% 
-  summarise(M_mean=mean(M_pred),
-            M_alpha=mean(M_alpha)) %>% 
-  ungroup() %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R"))
-```
 
 
 # Part 4- Figures [BIG WORK IN PROGRESS]
@@ -578,310 +520,280 @@ paletteLENGTH <- c("#D55E00", "#E69F00", "#F0E442") #for figures 2 to 4
 paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99") #for figure 5
 ```
 
+
+```{r figure-median}
+P_data %>% 
+  select(METAPOP_ID, PATCH, SHUFFLE,LENGTH,local_connectedness, 
+         is.local5, is.local3, is.landscape8, is.landscape16, is.reshuffled) %>% 
+  distinct() %>% 
+  add_fitted_draws(P_mod,re_formula=NA,scale="response") %>% 
+  group_by(.draw,local_connectedness) %>% 
+  summarise(fit=mean(.value)) %>% 
+  ungroup() %>% 
+  #compare_levels(by=local_connectedness,variable=fit,fun=`/`) %>% mean_hdi()
+  ggplot() +
+  stat_halfeye(aes(y=local_connectedness, x=fit, fill=local_connectedness), .width = c(0.01,0.95), alpha=0.5) +
+  scale_fill_manual(values=paletteLOCAL)+
+  geom_point(data=P_data %>% group_by(local_connectedness) %>% summarise(median=median(AFEMA)), 
+             aes(y=local_connectedness, x=median),pch=21, size = 3, fill="red") +
+  scale_x_continuous("Median population size (adult females)") + 
+  scale_y_discrete("Local connectedness")+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+
+
+
+```
+
 And we need to summarise the observed values to display them along the posterior when relevant:
 
 ```{r obs}
-obssummary <- data %>% 
-  pivot_longer(P11:P33) %>% 
-  group_by(SHUFFLE,LENGTH,METAPOP_ID,name) %>%
-  summarise(P_mean=mean(value), P_se=plotrix::std.error(value),
-            M_mean=mean(METAPOPSUM),M_se=plotrix::std.error(METAPOPSUM)) %>% 
+P_obsmeans <- P_data %>%
+  group_by(SHUFFLE,LENGTH,METAPOP_ID,PATCH, local_connectedness) %>%
+  summarise(P_mean=mean(AFEMA), P_se=plotrix::std.error(AFEMA)) %>% 
   ungroup() %>% 
   mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R"))
 
 ```
 
-```{r obs-local}
-obssummary_local <- data %>% 
-  pivot_longer(P11:P33) %>% 
-  mutate(local_connectedness = 1 + 1*(name %in% c("P12","P21","P23","P32"))+ 2*(name %in% c("P11","P13","P31","P33"))) %>% 
-  mutate(local_connectedness = fct_recode(factor(local_connectedness),
-                                          `center (8 links)` = "1", 
-                                          `side (5 links)` = "2", 
-                                          `corner (3 links)`="3")) %>% 
-  group_by(SHUFFLE,local_connectedness,METAPOP_ID,name) %>%
-  summarise(P_mean=mean(value), P_se=plotrix::std.error(value)) %>% 
-  ungroup() %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R"))
-
-```
 
 ## patch level means
 
-```{r P_plot}
-tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_mean_all)) %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)+0.05, fill=factor(LENGTH)),
-               orientation="horizontal",.width=c(0.01,0.95))+
-  scale_fill_manual(values=paletteLENGTH)+
-  geom_pointinterval(
-    data = obssummary, 
-    aes(x=P_mean, xmin=P_mean-P_se,xmax=P_mean+P_se,y=log(LENGTH,base=4)-0.05), 
-    col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
-  scale_x_continuous("mean patch population size (adult females)")+
-  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
-  facet_wrap(~SHUFFLE)+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
+```{r P_SHUFFLE}
+P_shuffle<-P_tab %>% 
+  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) 
 
-
-tab %>% 
-  group_by(.iteration, LENGTH) %>% 
+P_shuffle %>% 
+  group_by(.iteration, SHUFFLE)  %>% 
   summarise(mean = mean(P_mean_all)) %>% 
   ggplot()+
-  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)+0.05, fill=factor(LENGTH)),
-               orientation="horizontal",.width=c(0.01,0.95))+
-  scale_fill_manual(values=paletteLENGTH)+
-  geom_pointinterval(
-    data = obssummary, 
-    aes(x=P_mean, 
-        xmin=P_mean-P_se,xmax=P_mean+P_se,
-        y=log(LENGTH,base=4)-0.05), 
-    col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
-  scale_x_continuous("mean patch population size (adult females)")+
-  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
-
-tab %>% 
-  group_by(.iteration, SHUFFLE) %>% 
-  summarise(mean = mean(P_mean_all)) %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
-  ggplot()+
-  geom_pointinterval(
-    data = obssummary, 
-    aes(x=P_mean, 
-        xmin=P_mean-P_se,xmax=P_mean+P_se,
-        y=SHUFFLE), 
-    col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
+  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=SHUFFLE,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
+                     position = position_jitter(width=0,height=0.2)) +
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
                orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
-  #stat_dots(data=obssummary,aes(x=P_mean,y=SHUFFLE),side="bottom")+
   scale_x_continuous("mean patch population size (adult females)")+
   scale_y_discrete("reshuffling?")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
   theme(legend.position = "none")
-```
 
-```{r P_plot-local}
-tab %>% 
-  pivot_longer(c(P_mean_corners,P_mean_center,P_mean_sides)) %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
-  group_by(.iteration, SHUFFLE, name) %>% 
-  summarise(mean=mean(value))%>%
-  mutate(local_connectedness = fct_relevel(factor(name) ,"P_mean_corners", after = Inf)) %>% 
-  mutate(local_connectedness = fct_recode(local_connectedness,
-                                          `center (8 links)` = "P_mean_center", 
-                                          `side (5 links)` = "P_mean_sides", 
-                                          `corner (3 links)`="P_mean_corners")) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
-               orientation="horizontal",.width=c(0.01,0.95),alpha= 0.5)+
-  geom_pointinterval(
-    data = obssummary_local, 
-    aes(x=P_mean, xmin=P_mean-P_se,xmax=P_mean+P_se,y=local_connectedness), 
-    col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
-  scale_fill_manual(values=paletteLOCAL)+
-  scale_x_continuous("mean patch population size (adult females)")+
-  scale_y_discrete("local connectedness")+
-  facet_grid(~SHUFFLE)+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
-
-
-
-tab %>% 
-  pivot_longer(c(P_mean_corners,P_mean_center,P_mean_sides)) %>% 
-  group_by(.iteration, name) %>% 
-  summarise(mean=mean(value))%>%
-  mutate(local_connectedness = fct_relevel(factor(name) , "P_mean_corners", after = Inf)) %>% 
-  mutate(local_connectedness = fct_recode(local_connectedness,
-                                          `center (8 links)` = "P_mean_center", 
-                                          `side (5 links)` = "P_mean_sides", 
-                                          `corner (3 links)`="P_mean_corners")) %>% 
-  ggplot()+
-  geom_pointinterval(
-    data = obssummary_local, 
-    aes(x=P_mean, xmin=P_mean-P_se,xmax=P_mean+P_se,y=local_connectedness), 
-    col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
-  stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
-               orientation="horizontal",.width=c(0.01,0.95),alpha= 0.5)+
-  scale_fill_manual(values=paletteLOCAL)+
-  scale_x_continuous("mean patch population size (adult females)")+
-  scale_y_discrete("local connectedness")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
-```
-
-let's have a look at the differences : 
-
-```{r P_contrast-general}
-P_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_mean_all)) %>% 
-  group_by(SHUFFLE) %>% 
-  compare_levels(variable=mean, by = LENGTH, fun = `/`) %>% 
-  mean_hdi()
-
-P_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_mean_all)) %>%
-  group_by(LENGTH) %>% 
-  compare_levels(variable=mean, by = SHUFFLE, fun = `/`) %>% 
-  mean_hdi()
-
-P_summary %>% group_by(.iteration,LENGTH) %>% summarise(mean = mean(P_mean_all)) %>% ungroup() %>% 
-  compare_levels(variable=mean, by = LENGTH, fun = `/`) %>% 
-  mean_hdi()
-
-tab %>% 
-  group_by(.iteration, SHUFFLE) %>% 
-  summarise(mean = mean(P_mean_all)) %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>%  ungroup() %>% 
-  compare_levels(variable=mean, by = SHUFFLE, fun = `/`) %>% 
-  mean_hdi()
-```
-
-```{r P_contrast-local}
-tab %>% 
-  pivot_longer(c(P_mean_corners,P_mean_center,P_mean_sides)) %>% 
-  group_by(.iteration, name) %>% 
-  summarise(mean=mean(value))%>% ungroup() %>% 
-    compare_levels(variable=mean, by = name, fun=`/`) %>% 
-    mean_hdi()
-
-#tab %>% 
-#  pivot_longer(c(P_mean_corners,P_mean_center,P_mean_sides)) %>% 
-#  group_by(.iteration,name, SHUFFLE) %>% 
-#  summarise(mean=mean(value))%>%
-#  group_by(SHUFFLE) %>% 
-#  compare_levels(variable=mean, by = name, fun=`/`) %>% 
-#  mean_hdi()
-#
-#tab %>% 
-#  pivot_longer(c(P_mean_corners,P_mean_center,P_mean_sides)) %>% 
-#  group_by(.iteration,name, SHUFFLE) %>% 
-#  summarise(mean=mean(value))%>%
-#  group_by(name) %>% 
-#  compare_levels(variable=mean, by = SHUFFLE, fun=`/`) %>% 
-#  mean_hdi()
-#
-#tab %>% 
-#  pivot_longer(c(P_mean_corners,P_mean_center,P_mean_sides)) %>% 
-#  group_by(.iteration,name, LENGTH) %>% 
-#  summarise(mean=mean(value))%>%
-#  group_by(name) %>% 
-#  compare_levels(variable=mean, by = LENGTH, fun=`/`) %>% 
-#  mean_hdi()
-#
-#tab %>% 
-#  pivot_longer(c(P_mean_corners,P_mean_center,P_mean_sides)) %>% 
-#  group_by(.iteration,name, LENGTH) %>% 
-#  summarise(mean=mean(value))%>%
-#  group_by(name) %>% 
-#  compare_levels(variable=mean, by = LENGTH, fun=`/`) %>% 
-#  mean_hdi()
-#
-#tab %>% 
-#  pivot_longer(c(P_mean_corners,P_mean_center,P_mean_sides)) %>% 
-#  group_by(.iteration,name, LENGTH) %>% 
-#  summarise(mean=mean(value))%>%
-#  group_by(LENGTH) %>% 
-#  compare_levels(variable=mean, by = name, fun=`/`) %>% 
-#  mean_hdi()
-```
-
-```{r M_contrast}
-M_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_mean)) %>% 
-  group_by(SHUFFLE) %>% 
-  compare_levels(variable=mean, by = LENGTH, fun = `/`) %>% 
-  mean_hdi()
-
-M_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_mean)) %>% 
-  group_by(LENGTH) %>% 
-  compare_levels(variable=mean, by = SHUFFLE, fun = `/`) %>% 
-  mean_hdi()
-```
-
-## metapopulation means
-
-```{r M_plot}
-M_summary %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(M_mean)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4)+0.05, fill=factor(LENGTH)),
-               orientation="horizontal",.width=c(0.01,0.95))+
-  scale_fill_manual(values=paletteLENGTH)+
-  geom_pointinterval(
-    data = obssummary %>% select(SHUFFLE, LENGTH, M_mean,M_se) %>% distinct(), 
-    aes(x=M_mean, xmin=M_mean-M_se,xmax=M_mean+M_se,y=log(LENGTH,base=4)-0.05), 
-    col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
-  scale_x_continuous("mean metapopulation size (adult females)")+
-  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
-  facet_wrap(~SHUFFLE)+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
-```
-
-## (alpha) var
-
-```{r P_alpha}
-
-vars_obs<-data %>% group_by(METAPOP_ID,LENGTH,SHUFFLE) %>%
-  select(METAPOP_ID,SHUFFLE, LENGTH,P11:P33) %>% nest(data=c(P11,P12,P13,P21,P22,P23,P31,P32,P33)) %>% 
-  mutate(means=map(.x=data,.f=~.x %>% colMeans())) %>% mutate(covs=map(.x=data,.f=~.x %>% cov())) %>% 
-  mutate(alpha_obs=map2(.x=covs,.y=means,.f=~.x %>% 
-                          alpha_wang_loreau(varcorr=.,means=.y))) %>% 
-  mutate(gamma_obs=map2(.x=covs,.y=means,.f=~.x %>% 
-                          gamma_wang_loreau(varcorr=.,means=.y))) %>% unnest(c(alpha_obs,gamma_obs))
-
-tab %>% group_by(.iteration,LENGTH) %>% summarise(mean = mean(P_gamma)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4), fill=factor(LENGTH)),
-               orientation="horizontal",.width=c(0.01,0.95))+
-  #geom_point(data=vars_obs,aes(alpha_obs,y=log(LENGTH,base=4)),col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
-  scale_fill_manual(values=paletteLENGTH)+
-  scale_x_continuous(expression(paste("mean ", gamma, " variability")))+
-  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
-
-tab %>% group_by(.iteration,SHUFFLE) %>% summarise(mean = mean(P_alpha)) %>% 
+P_shuffle %>% 
+  group_by(.iteration, SHUFFLE) %>%  
+  summarise(mean = mean(P_alpha)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95))+
-  #geom_point(data=vars_obs,aes(gamma_obs,y=SHUFFLE),col="grey40",size = 1.5, alpha=0.5, position=position_jitter(height=0.1,width=NULL))+
-  scale_x_continuous(expression(paste("mean ", alpha, " variability")))+
-  scale_y_discrete("reshuffled?")+
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_x_continuous("mean alpha variability")+
+  scale_y_discrete("reshuffling?")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
   theme(legend.position = "none")
 
-tab %>% group_by(.iteration,SHUFFLE) %>% summarise(mean = mean(P_gamma)) %>% ungroup() %>% 
-  compare_levels(variable=mean,by=SHUFFLE,fun=`/`) %>% 
-  mean_hdi()
-
-tab %>% group_by(.iteration,LENGTH) %>% summarise(mean = mean(P_gamma)) %>% ungroup() %>% 
-  compare_levels(variable=mean,by=LENGTH,fun=`/`) %>% 
-  mean_hdi()
-
-
-
-tab %>% group_by(.iteration,LENGTH, SHUFFLE) %>% summarise(mean = mean(P_alpha)) %>% 
+P_shuffle %>% 
+  group_by(.iteration, SHUFFLE) %>%  
+  summarise(mean = mean(P_phi)) %>% 
   ggplot()+
-  stat_halfeye(aes(x=mean,y=log(LENGTH,base=4), fill=factor(LENGTH)),
-               orientation="horizontal",.width=c(0.01,0.95))+
-  scale_fill_manual(values=paletteLENGTH)+
-  scale_x_continuous(expression(paste("mean ", alpha, " variability")))+
-  scale_y_continuous("bridge length (cm)", breaks=log(c(4,8,16),base=4), labels=c(4,8,16))+
-  facet_wrap(~SHUFFLE)+
+  stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_x_continuous("mean spatial synchrony (1/beta)")+
+  scale_y_discrete("reshuffling?")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
   theme(legend.position = "none")
 
+P_shuffle %>% 
+  group_by(.iteration, SHUFFLE) %>%  
+  summarise(mean = mean(P_gamma)) %>% 
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_x_continuous("mean gamma variability")+
+  scale_y_discrete("reshuffling?")+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")+ 
+  coord_cartesian(xlim=c(0.20,0.45))
+
+P_shuffle %>% 
+  group_by(.iteration, SHUFFLE) %>%  
+  summarise(mean = mean(P_mean_all)) %>% 
+  ungroup() %>% 
+  compare_levels(by=SHUFFLE,variable=mean, fun=`/`) %>% 
+  mean_hdi()
+
+```
+
+```{r P_landscape}
+P_tab %>% 
+  group_by(.iteration, LENGTH) %>% 
+  summarise(mean = mean(P_mean_all))  %>% 
+  ggplot()+
+  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=LENGTH,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
+                     position = position_jitter(width=0,height=0.2)) +
+  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLENGTH)+
+  scale_x_continuous("mean patch population size (adult females)")+
+  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+
+
+P_tab %>% 
+  group_by(.iteration, LENGTH) %>% 
+  summarise(mean = mean(P_alpha))  %>% 
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLENGTH)+
+  scale_x_continuous("mean alpha variability")+
+  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+
+P_tab %>% 
+  group_by(.iteration, LENGTH) %>% 
+  summarise(mean = mean(P_phi))  %>% 
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLENGTH)+
+  scale_x_continuous("mean spatial synchrony (1/beta)")+
+  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+
+P_tab %>% 
+  group_by(.iteration, LENGTH) %>% 
+  summarise(mean = mean(P_gamma))  %>% 
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLENGTH)+
+  scale_x_continuous("mean gamma variability")+
+  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none") + 
+  coord_cartesian(xlim=c(0.20,0.45))
+
+```
+
+```{r P_local}
+P_tab %>% 
+  pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
+  mutate(local_connectedness = fct_recode(factor(local_connectedness),
+                                          `center (8 links)` = "P_mean_center", 
+                                          `side (5 links)` = "P_mean_sides", 
+                                          `corner (3 links)`="P_mean_corners")) %>% 
+  group_by(.iteration, local_connectedness) %>% 
+  summarise(mean = mean(P_mean_local)) %>% 
+  ggplot()+
+  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
+                     position = position_jitter(width=0,height=0.2)) +
+  stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLOCAL)+
+  scale_x_continuous("mean patch population size (adult females)")+
+  scale_y_discrete("Local connectedness")+
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+```
+
+
+
+```{r}
+P_tab %>% 
+  group_by(.iteration, LENGTH, SHUFFLE) %>% 
+  summarise(mean = mean(P_mean_all)) %>% 
+  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
+  ggplot()+
+  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=LENGTH,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
+                     position = position_jitter(width=0,height=0.2)) +
+  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLENGTH)+
+  scale_x_continuous("mean patch population size (adult females)")+
+  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  facet_wrap(~SHUFFLE) +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+
+P_tab %>% 
+  group_by(.iteration, LENGTH, SHUFFLE) %>% 
+  summarise(mean = mean(P_alpha)) %>% 
+  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLENGTH)+
+  scale_x_continuous("mean alpha variability")+
+  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  facet_wrap(~SHUFFLE) +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+
+P_tab %>% 
+  group_by(.iteration, LENGTH, SHUFFLE) %>% 
+  summarise(mean = mean(P_phi)) %>% 
+  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLENGTH)+
+  scale_x_continuous("mean spatial synchrony (1/beta)")+
+  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  facet_wrap(~SHUFFLE) +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+
+P_tab %>% 
+  group_by(.iteration, LENGTH, SHUFFLE) %>% 
+  summarise(mean = mean(P_gamma)) %>% 
+  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
+  ggplot()+
+  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLENGTH)+
+  scale_x_continuous("mean gamma variability")+
+  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  facet_wrap(~SHUFFLE) +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")+ 
+  coord_cartesian(xlim=c(0.15,0.45))
+```
+
+```{r P_local2}
+P_tab %>% 
+  pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
+  mutate(local_connectedness = fct_recode(factor(local_connectedness),
+                                          `center (8 links)` = "P_mean_center", 
+                                          `side (5 links)` = "P_mean_sides", 
+                                          `corner (3 links)`="P_mean_corners")) %>% 
+  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
+  group_by(.iteration, local_connectedness, SHUFFLE) %>% 
+  summarise(mean = mean(P_mean_local)) %>% 
+  ggplot()+
+  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
+                     position = position_jitter(width=0,height=0.2)) +
+  stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
+               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+  scale_fill_manual(values=paletteLOCAL)+
+  scale_x_continuous("mean patch population size (adult females)")+
+  scale_y_discrete("Local connectedness")+
+  facet_wrap(~SHUFFLE) +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
 ```
 
 
