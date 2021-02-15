@@ -551,13 +551,21 @@ P_obsmeans <- P_data %>%
   group_by(SHUFFLE,LENGTH,METAPOP_ID,PATCH, local_connectedness) %>%
   summarise(P_mean=mean(AFEMA), P_se=plotrix::std.error(AFEMA)) %>% 
   ungroup() %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R"))
-
+  mutate(SHUFFLE=fct_recode(as.factor(SHUFFLE), `control`="NO",`randomized`="R")) %>% 
+  mutate(LENGTH=fct_recode(as.factor(LENGTH), 
+                           `16 cm (low)`="16",
+                           `8 cm (medium)`="8",
+                           `4 cm (high)`="4")) %>% 
+  mutate(local_connectedness=fct_recode(as.factor(local_connectedness), 
+                           `corner (low)`="corner (3 links)",
+                           `side (medium)`="side (5 links)",
+                           `center (high)`="center (8 links)"))
+###temp fixes!! need to go back at the start of the code and redo all
 ```
 
 ```{r P_SHUFFLE}
 P_shuffle<-P_tab_plots %>% 
-  mutate(SHUFFLE=fct_recode(as.factor(SHUFFLE), control="NO",randomized="R"))
+  mutate(SHUFFLE=fct_recode(as.factor(SHUFFLE), `control`="NO",`randomized`="R"))
 ```
 
 ## patch level means
@@ -567,44 +575,48 @@ p1<-P_shuffle %>%
   group_by(.iteration, SHUFFLE)  %>% 
   summarise(mean = mean(P_mean_all)) %>% 
   ggplot()+
-  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=SHUFFLE,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
-                     position = position_jitter(width=0,height=0.2)) +
+  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=SHUFFLE,alpha=(1/(P_se/P_mean))),col="grey60",
+                     height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_x_continuous("")+
-  scale_y_discrete("reshuffling?")+
+  scale_y_discrete("")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
   theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(10,60))
+  coord_cartesian(xlim=c(5,50))
 
 p2 <- P_tab_plots %>% 
+    mutate(LENGTH=fct_recode(as.factor(LENGTH), 
+                           `16 cm (low)`="16",
+                           `8 cm (medium)`="8",
+                           `4 cm (high)`="4")) %>% 
   group_by(.iteration, LENGTH) %>% 
   summarise(mean = mean(P_mean_all))  %>% 
   ggplot()+
-  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=LENGTH,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
-                     position = position_jitter(width=0,height=0.2)) +
+  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=LENGTH,alpha=(1/(P_se/P_mean))),col="grey60",
+                     height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("")+
-  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  scale_y_discrete("Metapopulation connectedness")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
   theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(10,60))
+  coord_cartesian(xlim=c(5,50))
 
 p3 <- P_tab_plots %>% 
   pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
   mutate(local_connectedness = fct_recode(factor(local_connectedness),
-                                          `center (8 links)` = "P_mean_center", 
-                                          `side (5 links)` = "P_mean_sides", 
-                                          `corner (3 links)`="P_mean_corners")) %>% 
+                                          `center (high)` = "P_mean_center", 
+                                          `side (medium)` = "P_mean_sides", 
+                                          `corner (low)`="P_mean_corners")) %>% 
   group_by(.iteration, local_connectedness) %>% 
   summarise(mean = mean(P_mean_local)) %>% 
   ggplot()+
-  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
-                     position = position_jitter(width=0,height=0.2)) +
+  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,alpha=(1/(P_se/P_mean))),
+              col="grey60", height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
                orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
   scale_fill_manual(values=paletteLOCAL)+
@@ -613,7 +625,7 @@ p3 <- P_tab_plots %>%
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
   theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(10,60))
+  coord_cartesian(xlim=c(5,50))
 
 p1/p2/p3
 
@@ -635,7 +647,7 @@ P_shuffle %>%
   compare_levels(variable=mean, by=LENGTH, fun=`/`) %>% 
   mean_hdi()
 
-P_tab %>% 
+P_tab_plots %>% 
   pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
   mutate(local_connectedness = fct_recode(factor(local_connectedness),
                                           `center (8 links)` = "P_mean_center", 
@@ -656,7 +668,7 @@ p1<-P_shuffle %>%
   summarise(mean = mean(P_alpha)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_x_continuous("")+
   scale_y_discrete("reshuffling?")+
   cowplot::theme_half_open(11) +
@@ -669,7 +681,7 @@ p2<-P_tab %>%
   summarise(mean = mean(P_alpha))  %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("mean alpha variability")+
   scale_y_discrete("Landscape connectedness (bridge length, cm)")+
@@ -683,7 +695,7 @@ p3<-P_shuffle %>%
   summarise(mean = mean(P_phi)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_x_continuous("")+
   scale_y_discrete("")+
   cowplot::theme_half_open(11) +
@@ -696,7 +708,7 @@ p4<-P_tab %>%
   summarise(mean = mean(P_phi))  %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("mean spatial synchrony (1/beta)")+
   scale_y_discrete("")+
@@ -710,7 +722,7 @@ p5<-P_shuffle %>%
   summarise(mean = mean(P_gamma)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_x_continuous("")+
   scale_y_discrete("")+
   cowplot::theme_half_open(11) +
@@ -723,7 +735,7 @@ p6<-P_tab %>%
   summarise(mean = mean(P_gamma))  %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("mean gamma variability")+
   scale_y_discrete("")+
@@ -760,38 +772,42 @@ P_shuffle %>%
 ```
 
 ```{r P_size_inter}
-p1<-P_tab %>% 
+p1<-P_tab_plots %>% 
   group_by(.iteration, LENGTH, SHUFFLE) %>% 
   summarise(mean = mean(P_mean_all)) %>% 
   mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
+    mutate(LENGTH=fct_recode(as.factor(LENGTH), 
+                           `16 cm (low)`="16",
+                           `8 cm (medium)`="8",
+                           `4 cm (high)`="4")) %>% 
   ggplot()+
-  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=LENGTH,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
-                     position = position_jitter(width=0,height=0.2)) +
+  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=LENGTH,alpha=(1/(P_se/P_mean))),
+              col="grey60",height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("")+
-  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
+  scale_y_discrete("Metapopulation connectedness")+
   facet_wrap(~SHUFFLE) +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
   theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(10,60))
+  coord_cartesian(xlim=c(5,50))
 
-p2 <- P_tab %>% 
+p2 <- P_tab_plots %>% 
   pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
   mutate(local_connectedness = fct_recode(factor(local_connectedness),
-                                          `center (8 links)` = "P_mean_center", 
-                                          `side (5 links)` = "P_mean_sides", 
-                                          `corner (3 links)`="P_mean_corners")) %>% 
+                                          `center (high)` = "P_mean_center", 
+                                          `side (medium)` = "P_mean_sides", 
+                                          `corner (low)`="P_mean_corners")) %>% 
   mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
   group_by(.iteration, local_connectedness, SHUFFLE) %>% 
   summarise(mean = mean(P_mean_local)) %>% 
   ggplot()+
-  geom_pointinterval(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,xmin=P_mean-P_se,xmax=P_mean+P_se),col="grey",
-                     position = position_jitter(width=0,height=0.2)) +
+  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,alpha=(1/(P_se/P_mean))),
+              col="grey60",height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLOCAL)+
   scale_x_continuous("mean patch population size (adult females)")+
   scale_y_discrete("Local connectedness")+
@@ -799,7 +815,7 @@ p2 <- P_tab %>%
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
   theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(10,60))
+  coord_cartesian(xlim=c(5,50))
 
 p1/p2
 ```
@@ -842,58 +858,6 @@ P_tab %>%
   mean_hdi()
 
 ```
-
-```{r P_vars_inter}
-p1<-P_tab %>% 
-  group_by(.iteration, LENGTH, SHUFFLE) %>% 
-  summarise(mean = mean(P_alpha)) %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
-  scale_fill_manual(values=paletteLENGTH)+
-  scale_x_continuous("mean alpha variability")+
-  scale_y_discrete("Landscape connectedness (bridge length, cm)")+
-  facet_wrap(~SHUFFLE) +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(0.7,1.5))
-
-p2<-P_tab %>% 
-  group_by(.iteration, LENGTH, SHUFFLE) %>% 
-  summarise(mean = mean(P_phi)) %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
-  scale_fill_manual(values=paletteLENGTH)+
-  scale_x_continuous("mean spatial synchrony (1/beta)")+
-  scale_y_discrete("")+
-  facet_wrap(~SHUFFLE) +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
-
-p3<-P_tab %>% 
-  group_by(.iteration, LENGTH, SHUFFLE) %>% 
-  summarise(mean = mean(P_gamma)) %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R")) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),alpha=0.5)+
-  scale_fill_manual(values=paletteLENGTH)+
-  scale_x_continuous("mean gamma variability")+
-  scale_y_discrete("")+
-  facet_wrap(~SHUFFLE) +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(0.15,0.45))
-
-p1|p2|p3
-```
-
 
 ```{r}
 M_tab <- M_data %>% 
