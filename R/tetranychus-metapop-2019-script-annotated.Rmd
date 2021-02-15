@@ -26,14 +26,14 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
 
 This script analyses data resulting from the study of experimental metapopulations of spider mites *Tetranychus urticae*. Each replicate metapopulation was composed of 9 patches connected by bridges; the bridge length varied between replicates. Abundances of adult females were tracked weekly in each patch of each metapopulation. We are interested in the effect of bridge length and randomization treatment (see text) on mean patch-level population size, mean metapopulation size and various variability metrics. 
 
-This script relies heavily on de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] (for converting latent means and variance-covariance matrices to data/observed scale) and Wang and Loreau [@wangEcosystemStabilitySpace2014](for the principle and formula of $\alpha$, $\beta$, $\gamma$ variability in metapopulations). Everything below assumes the reader has read these two papers.
+This script relies heavily on de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] (for converting latent means and variance-covariance matrices to data/observed scale) and Wang and Loreau [-@wangEcosystemStabilitySpace2014] (for the principle and formulas of $\alpha$, $\beta$, $\gamma$ variability in metapopulations). Everything below assumes the reader has read these two papers.
 
 # Part 1 : Preparation
 
 ## 1A - packages
 
 First, we’re going to load all the packages we need. This includes the `tidyverse` packages [@wickhamWelcomeTidyverse2019], for data wrangling at the beginning and summarising/plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results.
-This script uses the Stan language [@carpenterStanProbabilisticProgramming2017; @standevelopmentteamRStanInterfaceStan2018] for model fitting (we can use the `rstan` or the `cmdstanr` implementation; see https://mc-stan.org/ for how to install them). The `brms` package [@burknerBrmsPackageBayesian2017] allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The `QGglmm` package by de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] is useful to convert latent scale variance-covariance matrices, like a (G)LMM output, to observed scale matrices, needed for our analysis.
+This script uses the Stan language [@carpenterStanProbabilisticProgramming2017] for model fitting (we can use the `rstan` or the `cmdstanr` implementation; see https://mc-stan.org/ for how to install them). The `brms` package [@burknerBrmsPackageBayesian2017] allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The `QGglmm` package by de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] is useful to convert latent scale variance-covariance matrices from a GLMM output to observed scale matrices, needed for our analysis.
 
 ```{r packages-loading}
 #library(rstan) ## Stan backend
@@ -56,7 +56,7 @@ library(here)
 # rstan_options(auto_write = TRUE) #for rstan
 options(mc.cores = 2) ## reduce/increase depending on cores available
 N_chains <- 4
-N_warmup <- 2000   ## used for publication: 10000 ## 200 is enough for tests
+N_warmup <- 2000   ## used for publication: 2000 ## 200 is enough for tests
 N_iter <- N_warmup + 2000  ## recommended for publication-level quality: 2000 iterations post warmup when all chains combined 
 ## Nwarmup + 200 is probably good enough for tests
 
@@ -141,7 +141,7 @@ M_data <- M_data %>%
 
 ## 1-C Functions for $\alpha$, $\beta$, $\gamma$ variability
 
-One of the aims of this script is to estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a temporal variance-covariance matrix, and a vector of mean patch population sizes (both must be numeric and contain the same number of patches, of course).
+One of the aims of this script is to estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a temporal variance-covariance matrix, and a vector of mean patch population sizes (both must be numeric and contain the same number of patches, of course)(and also both should be on the *observed/data* scale in the case of a GLMM).
 
 ```{r wang-loreau}
 
@@ -205,10 +205,10 @@ beta2_wang_loreau <- function(varcorr, means) {
 
 ### Patch-level model
 
-We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
-You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches form the same replicate can be correlated. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later (we'll come back to these non-linearities later). It is important to note that the presence of the temporal matrices it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
+We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment, local connectedness and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
+You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches form the same replicate can be correlated. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later. It is important to note that the presence of the temporal matrices it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
 
-Intuition behind this formulation (latent residuals via ORLE + specify covariance structure) is the same as in this comment by Paul Bürkner (https://github.com/paul-buerkner/brms/issues/600#issuecomment-511677732) 
+Intuition behind this formulation (latent residuals via OLRE + specify covariance structure) is the same as in this comment by Paul Bürkner (https://github.com/paul-buerkner/brms/issues/600#issuecomment-511677732) 
 
 
 The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
@@ -247,7 +247,7 @@ where $\beta$ are the fixed effects (with \beta_{0} the intercept), $\alpha$ are
 ### Meta-population model
 
 
-Similarly, we can write a (simpler) model for the total metapopulation size $M$ (the `METAPOPSUM` column). Because there are no correlations to worry about, we can use a negative binomial model here to model the within-replicate temporal variation:
+Similarly, we can write a (much simpler) model for the total metapopulation size $M$ (the `METAPOPSUM` column). Because there are no correlations to worry about, we can use a negative binomial model here to model the within-replicate temporal variation:
 
 $$
 \begin{equation*}
@@ -286,7 +286,7 @@ M_formula  <- bf(
 
 ## 2C - Implementation - choosing priors
 
-We then select our priors. Because the patch-level model is complex, with lots of moving parts relative to the amount of data, we can't just use "usual" weakly informative priors; we have to think a little harder to avoid a prior pushing the model towards blatantly wrong extreme values. Luckily we have prior data in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015], so we're going to be able to rely on explicit prior knowledge
+We then select our priors. Because the patch-level model is complex, with lots of moving parts relative to the amount of data, we can't just use "usual" weakly informative priors; we have to think a little harder to avoid a prior pushing the model towards blatantly wrong extreme values. Luckily we have independent prior data in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015], so we're going to be able to rely on explicit prior knowledge
 
 ```{r import_prior_data}
 prior_data <- read_csv(here("data","prior_data.csv"))
@@ -329,7 +329,7 @@ For the last three, we're just going to use general purpose weakly informative p
 
 For the random effect SDs, one can use the total log-scale variance in prior data as a guide, so roughly 1. The sum of replicate level variance, patch-level variance and within-patch level variance should then be around 0.9-1. So the typical prior variance for each of the 3 components should be around 0.3, leading to prior SDs around 0.5-0.55 as a pretty typical value.
 
-(note: specifying slightly larger priors is not dramatic and does not change outcome of among-treatment comparisons, but tends to shift all predicted means on the observed scale a bit higher than what is actually observed.)
+(note: specifying larger priors is not dramatic and does not change outcome of among-treatment comparisons, but tends to shift all predicted means on the observed scale a bit higher than what is actually observed.)
 
 ```{r prior-setting}
 P_prior <- c(
@@ -377,7 +377,7 @@ if(file.exists(here("R_output","M_mod.Rdata"))){
   load(here("R_output","M_mod.Rdata"))
   }else{
 M_mod <- brm(formula=M_formula, prior=M_prior, data = M_data, 
-           iter = 4000, warmup = 2000, chains = N_chains, seed = 42,
+           iter = N_iter, warmup = N_warmup, chains = N_chains, seed = 42,
            control = list(adapt_delta = 0.9),
            backend= "cmdstanr")
 
@@ -425,9 +425,27 @@ There's going to be a lot of variables, so we're gonna keep following our naming
 Let's start by extracting the total temporal covariance matrix
 
 ```{r}
-memory.limit(40000) #### if needed, a little memory boost to handle the full vcv matrix in final model
-P_vcv_time_global <- VarCorr(P_mod, summary = FALSE)$`METAPOP_ID:WEEK`$cov
+memory.limit(40000) #### if needed, a little memory boost above defaults to handle the full vcv matrices in final model
 
+P_full_vcv <- VarCorr(P_mod, summary = FALSE)
+```
+
+
+```{r}
+P_sd_metapop<-P_full_vcv$`METAPOP_ID`$sd
+
+P_sd_patch<-P_full_vcv$`METAPOP_ID:PATCH`$sd
+
+P_vcv_time_global <- P_full_vcv$`METAPOP_ID:WEEK`$cov
+
+rm(P_full_vcv) ## remove as VERY large and not needed anymore
+gc() #garbage collection
+
+
+```
+
+
+```{r}
 P_vcv_time_latent<-P_data %>% 
   select(METAPOP_ID,LENGTH,SHUFFLE) %>% 
   expand_grid(.iteration = 1:(N_chains * (N_iter-N_warmup))) %>% 
@@ -458,10 +476,16 @@ P_latent_intercepts <- P_data %>%
                                 .f=~.x %>% unlist()))
 ```
 
-
 ```{r merge-coefficients-tables}
 P_tab <- P_latent_intercepts %>% 
   left_join(P_vcv_time_latent) 
+
+P_vars<-tibble(.iteration=1:8000,
+               P_var_metapop=P_sd_metapop[,1]^2,
+               P_var_patch=P_sd_patch[,1]^2)
+
+P_tab<-P_tab %>% 
+  left_join(P_vars)
 ```
 
 ## Estimation of key quantities
@@ -504,9 +528,9 @@ P_tab <- P_tab %>%
 
 ```{r for-export}
 
-P_tab <- P_tab %>% ungroup() %>% select(-c(P_vcv_time_latent, P_latent_intercept, P_pred, P_psi, P_vcv_time_obs))
+P_tab_plots <- P_tab %>% ungroup() %>% select(-c(P_vcv_time_latent, P_latent_intercept, P_pred, P_psi, P_vcv_time_obs))
 
-write_csv(x = P_tab, file = here("R_output","P_tab.csv"))
+write_csv(x = P_tab_plots, file = here("R_output","P_tab.csv"))
 ```
 
 
@@ -518,40 +542,6 @@ Before doing the figures, we need to create color palettes that'll be used throu
 ```{r figure-palettes}
 paletteLENGTH <- c("#D55E00", "#E69F00", "#F0E442") #for figures 2 to 4
 paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99") #for figure 5
-```
-
-
-```{r figure-median}
-P_data %>% 
-  select(METAPOP_ID, PATCH, SHUFFLE,LENGTH,local_connectedness, 
-         is.local5, is.local3, is.landscape8, is.landscape16, is.reshuffled) %>% 
-  distinct() %>% 
-  add_fitted_draws(P_mod,re_formula=NA,scale="response") %>% 
-  group_by(.draw,local_connectedness) %>% 
-  summarise(fit=mean(.value)) %>% 
-  ungroup() %>% 
-  #compare_levels(by=local_connectedness,variable=fit,fun=`/`) %>% mean_hdi()
-  ggplot() +
-  stat_halfeye(aes(y=local_connectedness, x=fit, fill=local_connectedness), .width = c(0.01,0.95), alpha=0.5) +
-  scale_fill_manual(values=paletteLOCAL)+
-  geom_point(data=P_data %>% group_by(local_connectedness) %>% summarise(median=median(AFEMA)), 
-             aes(y=local_connectedness, x=median),pch=21, size = 3, fill="red") +
-  scale_x_continuous("Median population size (adult females)") + 
-  scale_y_discrete("Local connectedness")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
-
-
-P_data %>% 
-  select(METAPOP_ID, PATCH, SHUFFLE,LENGTH,local_connectedness, 
-         is.local5, is.local3, is.landscape8, is.landscape16, is.reshuffled) %>% 
-  distinct() %>% 
-  add_fitted_draws(P_mod,re_formula=NA,scale="response") %>% 
-  group_by(.draw,local_connectedness) %>% 
-  summarise(fit=mean(.value)) %>% 
-  ungroup() %>% compare_levels(by=local_connectedness,variable=fit,fun=`/`) %>% 
-  mean_hdi()
 ```
 
 And we need to summarise the observed values to display them along the posterior when relevant:
@@ -566,8 +556,8 @@ P_obsmeans <- P_data %>%
 ```
 
 ```{r P_SHUFFLE}
-P_shuffle<-P_tab %>% 
-  mutate(SHUFFLE=fct_recode(SHUFFLE, control="NO",randomized="R"))
+P_shuffle<-P_tab_plots %>% 
+  mutate(SHUFFLE=fct_recode(as.factor(SHUFFLE), control="NO",randomized="R"))
 ```
 
 ## patch level means
@@ -588,7 +578,7 @@ p1<-P_shuffle %>%
   theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(10,60))
 
-p2 <- P_tab %>% 
+p2 <- P_tab_plots %>% 
   group_by(.iteration, LENGTH) %>% 
   summarise(mean = mean(P_mean_all))  %>% 
   ggplot()+
@@ -604,7 +594,7 @@ p2 <- P_tab %>%
   theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(10,60))
 
-p3 <- P_tab %>% 
+p3 <- P_tab_plots %>% 
   pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
   mutate(local_connectedness = fct_recode(factor(local_connectedness),
                                           `center (8 links)` = "P_mean_center", 
@@ -914,6 +904,15 @@ M_tab <- M_data %>%
   mean_hdi(.value) %>% 
   rename(.lower_M=".lower",.upper_M=".upper",.value_M=".value")
 
+M_tab_trt <- M_data %>% 
+  select(LENGTH,SHUFFLE,METAPOP_ID,
+         is.landscape8,is.landscape16,is.reshuffled) %>% 
+  add_fitted_draws(M_mod,re_formula = NA) %>% 
+  group_by(LENGTH,SHUFFLE) %>% 
+  mean_hdi(.value) %>% 
+  rename(.lower_M_trt=".lower",.upper_M_trt=".upper",.value_M_trt=".value")
+
+
 P_tab_M <- P_tab %>% 
   select(LENGTH,SHUFFLE,METAPOP_ID, P_mean_all) %>% 
   group_by(LENGTH,SHUFFLE, METAPOP_ID) %>% 
@@ -921,17 +920,30 @@ P_tab_M <- P_tab %>%
   mean_hdi(.value_P) %>% 
   rename(.lower_P=".lower",.upper_P=".upper")
 
+P_tab_M_trt <- P_tab %>% 
+  select(LENGTH,SHUFFLE,METAPOP_ID, P_mean_all,.iteration) %>% 
+  group_by(LENGTH,SHUFFLE,.iteration) %>% 
+  summarise(.value_P_trt = mean(P_mean_all*9)) %>% 
+  group_by(LENGTH,SHUFFLE) %>% 
+  mean_hdi(.value_P_trt) %>% 
+  rename(.lower_P_trt=".lower",.upper_P_trt=".upper")
+###double check the tabs above
+
 left_join(M_tab,P_tab_M) %>% 
+  left_join(M_tab_trt) %>% 
+  left_join(P_tab_M_trt) %>% 
   ggplot()+
-  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey")+
-  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey")+
-  geom_point(aes(x=.value_P,y=.value_M),size=2)+
+  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey95")+
+  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey95")+
+  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey80")+
+  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= SHUFFLE))+
+  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= SHUFFLE))+
+  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= SHUFFLE, size=as.numeric(as.character(LENGTH))))+
   geom_abline(intercept = 0,slope=1)+
   scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
   scale_x_continuous("predicted mean metapopulation size based on patch-level model") +
   cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
   
 ```
 
