@@ -248,7 +248,7 @@ N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}), \\
 
 \end{equation*}$$
 
-where $\beta$ are the fixed effects (with \beta_{0} the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix.
+where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix.
 
 ### Meta-population model
 
@@ -546,7 +546,12 @@ write_csv(x = P_tab_plots, file = here("R_output","P_tab.csv"))
 Before doing the figures, we need to create color palettes that'll be used throughout:
 
 ```{r}
-P_tab_plots <- read_csv(here("R_output","P_tab.csv"))
+P_tab_plots <- read_csv(here("R_output","P_tab.csv")) %>% 
+  mutate(
+    LENGTH=fct_relevel(
+      factor(LENGTH),
+      "16 cm (low)","8 cm (medium)","4 cm (high)")
+  )
 ```
 
 
@@ -561,7 +566,16 @@ And we need to summarise the observed values to display them along the posterior
 P_obsmeans <- P_data %>%
   group_by(SHUFFLE,LENGTH,METAPOP_ID,PATCH, local_connectedness) %>%
   summarise(P_mean=mean(AFEMA), P_se=plotrix::std.error(AFEMA)) %>% 
-  ungroup()
+  ungroup()%>% 
+  mutate(
+    LENGTH=fct_relevel(
+      factor(LENGTH),
+      "16 cm (low)","8 cm (medium)","4 cm (high)"),
+    local_connectedness=fct_relevel(
+      factor(local_connectedness),
+      "corner (low)","side (medium)" ,"center (high)"
+    )
+  )
 ```
 
 ## patch level means
@@ -574,8 +588,8 @@ p1<-P_tab_plots %>%
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=SHUFFLE,alpha=(1/(P_se^2/P_mean^2))),
               col="grey60",
                      height=0.2,size=3) +
-  geom_errorbarh(data=P_obsmeans %>% group_by(SHUFFLE) %>% summarise(mean=mean(P_mean)),
-                 aes(y=SHUFFLE,xmin=mean,xmax=mean),height=.8,size=1,col="grey60")+
+  #geom_errorbarh(data=P_obsmeans %>% group_by(SHUFFLE) %>% summarise(mean=mean(P_mean)),
+  #               aes(y=SHUFFLE,xmin=mean,xmax=mean),height=.8,size=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
                orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_x_continuous("")+
@@ -591,8 +605,8 @@ p2 <- P_tab_plots %>%
   ggplot()+
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=LENGTH,alpha=(1/(P_se^2/P_mean^2))),col="grey60",
                      height=0.2,size=3) +
-    geom_errorbarh(data=P_obsmeans %>% group_by(LENGTH) %>% summarise(mean=mean(P_mean)),
-                 aes(y=LENGTH,xmin=mean,xmax=mean),height=1,col="grey60")+
+  #  geom_errorbarh(data=P_obsmeans %>% group_by(LENGTH) %>% summarise(mean=mean(P_mean)),
+  #               aes(y=LENGTH,xmin=mean,xmax=mean),height=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
                orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLENGTH)+
@@ -608,14 +622,18 @@ p3 <- P_tab_plots %>%
   mutate(local_connectedness = fct_recode(factor(local_connectedness),
                                           `center (high)` = "P_mean_center", 
                                           `side (medium)` = "P_mean_sides", 
-                                          `corner (low)`="P_mean_corners")) %>% 
+                                          `corner (low)`="P_mean_corners")) %>%
+  mutate(local_connectedness=fct_relevel(
+      factor(local_connectedness),
+      "corner (low)","side (medium)" ,"center (high)"
+    )) %>% 
   group_by(.iteration, local_connectedness) %>% 
   summarise(mean = mean(P_mean_local)) %>% 
   ggplot()+
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,alpha=(1/(P_se^2/P_mean^2))),
               col="grey60", height=0.2,size=3) +
-    geom_errorbarh(data=P_obsmeans %>% group_by(local_connectedness) %>% summarise(mean=mean(P_mean)),
-                 aes(y=local_connectedness,xmin=mean,xmax=mean),height=1,col="grey60")+
+  #  geom_errorbarh(data=P_obsmeans %>% group_by(local_connectedness) %>% summarise(mean=mean(P_mean)),
+  #               aes(y=local_connectedness,xmin=mean,xmax=mean),height=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
                orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLOCAL)+
@@ -798,8 +816,8 @@ p1<-P_tab_plots %>%
   ggplot()+
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=LENGTH,alpha=(1/(P_se^2/P_mean^2))),
               col="grey60",height=0.2,size=3) +
-  geom_errorbarh(data=P_obsmeans %>% group_by(SHUFFLE,LENGTH) %>% summarise(mean=mean(P_mean)),
-                 aes(y=LENGTH,xmin=mean,xmax=mean),height=.8,size=1,col="grey60")+
+  #geom_errorbarh(data=P_obsmeans %>% group_by(SHUFFLE,LENGTH) %>% summarise(mean=mean(P_mean)),
+  #               aes(y=LENGTH,xmin=mean,xmax=mean),height=.8,size=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
                orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLENGTH)+
@@ -817,13 +835,17 @@ p2 <- P_tab_plots %>%
                                           `center (high)` = "P_mean_center", 
                                           `side (medium)` = "P_mean_sides", 
                                           `corner (low)`="P_mean_corners")) %>% 
+    mutate(local_connectedness=fct_relevel(
+      factor(local_connectedness),
+      "corner (low)","side (medium)" ,"center (high)"
+    )) %>% 
   group_by(.iteration, local_connectedness, SHUFFLE) %>% 
   summarise(mean = mean(P_mean_local)) %>% 
   ggplot()+
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,alpha=(1/(P_se^2/P_mean^2))),
               col="grey60",height=0.2,size=3) +
-  geom_errorbarh(data=P_obsmeans %>% group_by(SHUFFLE,local_connectedness) %>% summarise(mean=mean(P_mean)),
-                 aes(y=local_connectedness,xmin=mean,xmax=mean),height=.8,size=1,col="grey60")+
+  #geom_errorbarh(data=P_obsmeans %>% group_by(SHUFFLE,local_connectedness) %>% summarise(mean=mean(P_mean)),
+  #               aes(y=local_connectedness,xmin=mean,xmax=mean),height=.8,size=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
                orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLOCAL)+
@@ -838,92 +860,6 @@ p2 <- P_tab_plots %>%
 p1/p2
 ```
 
-```{r}
-P_tab_plots %>% 
-  group_by(.iteration, LENGTH, SHUFFLE) %>% 
-  summarise(mean = mean(P_mean_all)) %>% 
-  ungroup() %>% 
-  mutate(TREATMENT = interaction(LENGTH,SHUFFLE)) %>% 
-  compare_levels(variable=mean,by=TREATMENT,fun=`/`) %>% 
-  mean_hdi()
-
-P_tab_plots %>% 
-  group_by(.iteration, LENGTH, SHUFFLE) %>% 
-  summarise(mean = mean(P_alpha)) %>% 
-  ungroup() %>% 
-  mutate(TREATMENT = interaction(LENGTH,SHUFFLE)) %>% 
-  compare_levels(variable=mean,by=TREATMENT,fun=`/`) %>% 
-  mean_hdi()
-
-P_tab_plots %>% 
-  group_by(.iteration, LENGTH, SHUFFLE) %>% 
-  summarise(mean = mean(P_phi)) %>% 
-  ungroup() %>% 
-  mutate(TREATMENT = interaction(LENGTH,SHUFFLE)) %>% 
-  compare_levels(variable=mean,by=TREATMENT,fun=`/`) %>% 
-  mean_hdi()
-
-P_tab_plots %>% 
-  group_by(.iteration, LENGTH, SHUFFLE) %>% 
-  summarise(mean = mean(P_gamma)) %>% 
-  ungroup() %>% 
-  mutate(TREATMENT = interaction(LENGTH,SHUFFLE)) %>% 
-  compare_levels(variable=mean,by=TREATMENT,fun=`/`) %>% 
-  mean_hdi()
-
-```
-
-```{r}
-M_tab <- M_data %>% 
-  select(LENGTH,SHUFFLE,METAPOP_ID,
-         is.landscape8,is.landscape16,is.randomized) %>% 
-  add_fitted_draws(M_mod) %>% 
-  group_by(LENGTH,SHUFFLE, METAPOP_ID) %>% 
-  mean_hdi(.value) %>% 
-  rename(.lower_M=".lower",.upper_M=".upper",.value_M=".value")
-
-M_tab_trt <- M_data %>% 
-  select(LENGTH,SHUFFLE,METAPOP_ID,
-         is.landscape8,is.landscape16,is.randomized) %>% 
-  add_fitted_draws(M_mod,re_formula = NA) %>% 
-  group_by(LENGTH,SHUFFLE) %>% 
-  mean_hdi(.value) %>% 
-  rename(.lower_M_trt=".lower",.upper_M_trt=".upper",.value_M_trt=".value")
-
-
-P_tab_M <- P_tab_plots %>% 
-  select(LENGTH,SHUFFLE,METAPOP_ID, P_mean_all) %>% 
-  group_by(LENGTH,SHUFFLE, METAPOP_ID) %>% 
-  mutate(.value_P = P_mean_all*9) %>% 
-  mean_hdi(.value_P) %>% 
-  rename(.lower_P=".lower",.upper_P=".upper")
-
-P_tab_M_trt <- P_tab_plots %>% 
-  select(LENGTH,SHUFFLE,METAPOP_ID, P_mean_all,.iteration) %>% 
-  group_by(LENGTH,SHUFFLE,.iteration) %>% 
-  summarise(.value_P_trt = mean(P_mean_all*9)) %>% 
-  group_by(LENGTH,SHUFFLE) %>% 
-  mean_hdi(.value_P_trt) %>% 
-  rename(.lower_P_trt=".lower",.upper_P_trt=".upper")
-###double check the tabs above
-
-left_join(M_tab,P_tab_M) %>% 
-  left_join(M_tab_trt) %>% 
-  left_join(P_tab_M_trt) %>% 
-  ggplot()+
-  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey95")+
-  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey95")+
-  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey80")+
-  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= SHUFFLE))+
-  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= SHUFFLE))+
-  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= SHUFFLE, size=as.numeric(factor(LENGTH))))+
-  geom_abline(intercept = 0,slope=1)+
-  scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
-  scale_x_continuous("predicted mean metapopulation size based on patch-level model") +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-  
-```
 
 
 # References

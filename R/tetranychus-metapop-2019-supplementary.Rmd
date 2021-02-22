@@ -1,6 +1,13 @@
 ---
-title: "Untitled"
-output: word_document
+title: "Supplementary Material for \"Individual heterogeneity and its importance for metapopulation dynamics\""
+authors: Stefano masier, Maxime Dahirel, Frederik Mortier, Dries Bonte
+output: 
+  html_document:
+    theme: yeti
+    toc: TRUE
+    toc_float: TRUE
+editor_options:
+  chunk_output_type: console
 bibliography: tetranychus-metapop-2019-refs.bib
 csl: journal-of-animal-ecology.csl
 ---
@@ -35,17 +42,19 @@ N_iter <- N_warmup + 2000  ## recommended for publication-level quality: 2000 it
 
 ```
 
+# S01 -- Experimental metapopulations -- practical details and maintenance during experiments
 
-# S01 – Experimental landscapes – practical details and maintenance during experiments
 All beans leaves used in the experiment were sourced from bean plants grown without using any pesticide and under controlled climatic rooms (21 ± 1°C, L:D 16:8).
-Each landscape was independently mounted on a bed of wet cotton, which was kept soaked with distilled water to provide hydration to the leaves and to create a barrier to prevent the mites from escaping or moving between patches outside the designated routes. To ensure constant hydration, automatic gardening pumps (GARDENA® set 1265-20) were connected to a reserve of distilled water and set to deliver a fixed amount of water through pipes during 1-minute-intervals once every 8 hours. The water flow was monitored to ensure that it never flooded the leaves or the bridges, to prevent additional stress and ensure that the connection between patches was always maintained.
-Landscapes were contained in top-opened plastic crates whose sides were covered in a thick Vaseline layer, to further ensure that no cross-contamination could happen between different metapopulations. The water pipes were coated in Vaseline as well, and were positioned so that there was as little direct contact with the cotton as possible to reduce the chance of mites climbing on them. 
-To ensure resources remained fresh throughout the experiment, every leaf in the setup was refreshed with a new one once a week, at the same time counting was done.  First, adult females were counted on the leaf under a stereomicroscope; then they were moved to the new leaf squares, following the protocol described in the main text. Finally, the old leaves were laid above the new ones, sustained by short sticks to reduce direct contact (to insure ventilation and prevent the spread of molds and fungal infestations), and left in place for 48 hours to allow males and juveniles to move on the new leaves as well. By keeping the old leaves detached from the cotton, we also induced a quick desiccation and a sudden drop of the food quality, thus stimulating the dispersal of the individuals towards the new leaf. After 48 hours, all the old leaves were removed along with the sticks to prevent mites from spinning webs around them.
 
-# S02 – Quantification of connectedness-dependent dispersal mortality
-We tested how dispersal success and individual survival is affected by the length of a Parafilm bridge in a setup similar to the one descripted in the main text, to empirically demonstrate that the lengths we chose in the main experiment do apply a significant selective pressure onto dispersers.
-We tested 4, 8, 16 and 32cm-long bridges, with five independent replicates per length. The plastic bridges were mounted on a bed of cotton, kept wet using abundant distilled water, and connected on one end only to a fresh bean (Phaseolus vulgaris L. cv. Prélude) leaf cut (2.5 x 1.5 cm² rectangle) to provide secure shelters and food sources to the mites. At the opposite ends of each bridge, we placed 10 adult females from our LS-VL stock population using a thin pen brush. Female age was not controlled for, to better approximate a real, non-synchronized population. A strip of wet paper placed orthogonally onto the bridge approximatively 2cm to the end, in order to stop female dispersal until all individuals had been placed, delimited the area the females were placed onto. Similar strips were used to lock the leaves in place on the wet cotton and to the bridges, as well as at the open end of the plastic bridge to keep it adherent to the wet cotton. No paper strips were placed along the bridge itself, so dispersing mites were not prevented from falling into wet cotton. All replicates were initialized at the same time, by removing the paper strips that stopped movement; the bridges were then stored into a climatically controlled room for 24 hours (≈25°C, L:D 16:8). We then counted the number of live mites on the bridges themselves and the arrival leaves; every unaccounted individual was considered dead and sunken into the wet cotton. We analyzed the effect of bridge length (as a continuous variable) on the proportion of dead individuals using a binomial generalized linear model with weakly informative priors ((McElreath, 2020), see Supplementary material Z).
+Each metapopulation was independently mounted on a bed of wet cotton, which was kept soaked with distilled water to provide hydration to the leaves and to create a barrier to prevent the mites from escaping or moving between patches outside the designated routes. To ensure constant hydration, automatic gardening pumps (GARDENA® set 1265-20) were connected to a reserve of distilled water and set to deliver a fixed amount of water through pipes during 1-minute-intervals once every 8 hours. The water flow was monitored to ensure that it never flooded the leaves or the bridges, to prevent additional stress and ensure that the connection between patches was always maintained.
 
+Landscapes were contained in top-opened plastic crates whose sides were covered in a thick Vaseline layer, to further ensure that no cross-contamination could happen between different metapopulations. The water pipes were coated in Vaseline as well, and were positioned so that there was as little direct contact with the cotton as possible to reduce the chance of mites climbing on them. To ensure resources remained fresh throughout the experiment, every leaf in the setup was refreshed with a new one once a week, at the same time counting was done. First, adult females were counted on the leaf under a stereomicroscope; then they were moved to the new leaf squares, following the protocol described in the main text. Finally, the old leaves were laid above the new ones, sustained by short sticks to reduce direct contact (to insure ventilation and prevent the spread of molds and fungal infestations), and left in place for 48 hours to allow males and juveniles to move on the new leaves as well. By keeping the old leaves detached from the cotton, we also induced a quick desiccation and a sudden drop of the food quality, thus stimulating the dispersal of the individuals towards the new leaf. After 48 hours, all the old leaves were removed along with the sticks to prevent mites from spinning webs around them.
+
+# S02 -- Quantification of connectedness-dependent dispersal mortality
+
+We tested how dispersal success and individual survival is affected by the length of a Parafilm bridge in a setup similar to the one described in the main text, to empirically demonstrate that the lengths we chose in the main experiment do apply a significant selective pressure onto dispersers.
+
+We tested 4, 8, 16 and 32 cm-long bridges, with five independent replicates per length. The plastic bridges were mounted on a bed of cotton, kept wet using abundant distilled water, and connected on one end only to a fresh bean (*Phaseolus vulgaris* L. cv. Prélude) leaf cut (2.5 x 1.5 cm^2^ rectangle) to provide secure shelters and food sources to the mites. At the opposite ends of each bridge, we placed 10 adult females from our LS-VL stock population using a thin pen brush. Female age was not controlled for, to better approximate a real, non-synchronized population. A strip of wet paper placed orthogonally onto the bridge approximately 2cm to the end, in order to stop female dispersal until all individuals had been placed, delimited the area the females were placed onto. Similar strips were used to lock the leaves in place on the wet cotton and to the bridges, as well as at the open end of the plastic bridge to keep it adherent to the wet cotton. No paper strips were placed along the bridge itself, so dispersing mites were not prevented from falling into wet cotton. All replicates were initialized at the same time, by removing the paper strips that stopped movement; the bridges were then stored into a climatically controlled room for 24 hours ( $\simeq$ 25°C, L:D 16:8). We then counted the number of live mites on the bridges themselves and the arrival leaves; every unaccounted individual was considered dead and sunken into the wet cotton. We analyzed the effect of bridge length (as a continuous variable) on the proportion of dead individuals using a binomial generalized linear model with weakly informative priors [@mcelreath2020; see Supplementary material S03].
 
 ```{r data-load-prelim}
 prelim_data <- read_csv(here("data","tetranychus-metapop-2019-bridge-trials.csv"))
@@ -55,6 +64,10 @@ prelim_data <- read_csv(here("data","tetranychus-metapop-2019-bridge-trials.csv"
 prelim_data<-prelim_data %>% 
   mutate(length_centered=LENGTH-mean(LENGTH))
 
+if(file.exists(here("R_output","supplementary_model.Rdata"))){
+  load(here("R_output","supplementary_model.Rdata"))
+  }else
+    {
 mod_bridge <- brm(
   Ndead_24h|trials(Nstart)~length_centered,family=binomial, data=prelim_data,
   chains=4,iter=4000,warmup=2000,
@@ -62,29 +75,201 @@ mod_bridge <- brm(
           set_prior("normal(0,1)",class="b")),
   seed=42,backend="cmdstanr"
 )
+save(list=c("mod_bridge"), file=here("R_output","supplementary_model.Rdata"))
+}
 
-posterior_samples(mod_bridge) %>% 
+beta_slope<-posterior_samples(mod_bridge) %>% 
   mean_hdi(b_length_centered)
 ```
 
-Results
-The proportion of dead individuals increased with the length of the plastic bridge the mites were placed upon (β = 0.04 [0.02, 0.07], Fig. S02.1).
+## Results 
+
+The proportion of dead individuals increased with the length of the plastic bridge the mites were placed upon ($\beta$ = `r round(beta_slope$b_length_centered,2)` [`r round(beta_slope$.lower,2)`, `r round(beta_slope$.upper,2)`], Fig. S02.1).
+
 ```{r prelim-model2}
+
+
 tibble(LENGTH=4:32,Nstart=10) %>% 
   mutate(length_centered=LENGTH-mean(prelim_data$LENGTH)) %>% 
   add_fitted_draws(mod_bridge) %>% 
   ggplot()+
   stat_lineribbon(aes(LENGTH,.value/Nstart), fill="grey",.width=c(0.95))+
-  geom_point(data=prelim_data,aes(LENGTH,Ndead_24h/Nstart),pch=21,fill="black",size=2) + 
+  geom_point(data=prelim_data,aes(LENGTH,Ndead_24h/Nstart),pch= 21,fill="black",size=3) + 
   scale_x_continuous("bridge length (cm)")+
   scale_y_continuous("proportion dead after 24h") +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
   theme(legend.position = "none")
 ```
-Figure S02.1. Mortality rate as a function of bridge length during preliminary trials. Both observed values (dots) and mean [95% credible band] are plotted.
 
-# model code
+**Figure S02.1.** Mortality rate as a function of bridge length during preliminary trials. Both observed values (dots) and mean [95% credible band] are plotted.
+
+# S03 -- Models description
+
+## Patch-level model
+
+We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment, local connectedness and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
+You can see below that we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches form the same replicate can be correlated. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later. It is important to note that the presence of the temporal matrices it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
+
+Intuition behind this formulation (latent residuals via OLRE + specified covariance structure) is the same as in this comment by Paul Bürkner (https://github.com/paul-buerkner/brms/issues/600#issuecomment-511677732) 
+
+The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
+
+$$
+\begin{equation*}
+N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}), \\
+
+\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j,x,y}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},\\
+
+\alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha}),\\
+
+\gamma_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{\eta}),\\
+
+\left[\begin{matrix}
+\eta_{[i,1,1,t]} \\ ... \\ \eta_{[i,3,3,t]} 
+\end{matrix}\right] \sim {\textrm{MVNormal}}\left(
+
+\left[\begin{matrix}
+0 \\ ... \\ 0 
+\end{matrix}\right] ,
+\boldsymbol{\Omega}_{[i]}\right),\\
+
+\boldsymbol{\Omega}_{[i]} = 
+\left(\begin{matrix}
+\sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
+\end{matrix}\right)  
+\boldsymbol{R}_{[i]}
+\left(\begin{matrix}
+\sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
+\end{matrix}\right).    \\
+
+\end{equation*}
+$$  
+
+where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following , this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
+
+## Meta-population model
+
+Similarly, we can write a (much simpler) model for the total metapopulation size (total number of adult females) $M$. Because there are no correlations to worry about, we can use a negative binomial model here to model the within-replicate temporal variation:
+
+$$
+\begin{equation*}
+M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}), \\
+\log(\lambda_{[i]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j}} + \gamma_{[i]},\\
+
+\log(\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},\\
+
+\gamma_{[i]} \sim \mathrm{Normal}(0, \sigma_{\gamma}),\\
+
+\eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).\\
+\end{equation*}
+$$  
+Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similalry, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape.
+
+## Rationale behind priors
+
+Given the models complexity, we combined general weakly informative priors sensu McElreath [-@mcelreath2020] with more informative priors based on preexisting abundance data [@deroissartDataSpatialSpatiotemporal2016; @deroissartSpatialSpatiotemporalVariation2015]. Ignoring these prior sources of information led to models predicting consistently too high abundances (not shown), although relative differences between treatments remained qualitatively similar.
+
+In the patch-level model, priors for the fixed-effects coefficients $\beta_{j}$ (except $\beta_{0}$) and for the random effect correlation matrices followed McElreath suggestions (here $\mathrm{Normal}(0,1)$ and $\mathrm{LKJCorr}(2)$ respectively). Priors for the intercept $\beta_{0}$ and for the random effect standard deviations were based on the whole distribution of prior abundance data [@deroissartDataSpatialSpatiotemporal2016; @deroissartSpatialSpatiotemporalVariation2015] and on the variance of that distribution, both on the log scale. We used a $\mathrm{Normal}(2.8,1)$ prior for $\beta_{0}$, and a $\mathrm{Half-Normal}(0,0.5)$ for the $\sigma$ parameters (when summing across the different random effect levels, this gives an overall prior for log-scale total variance centred on roughly 1, matching prior information).
+
+In the metapopulation-level model, we replaced the prior for $\beta_{0}$ by $\mathrm{Normal}(5,1)$ in order to match the fact that metapopulations contain 9 patches, and used general purpose $\mathrm{Normal}(0,1)$ for all parameters linked to the shape $\phi$.
+
+# S04 -- Comparison between patch-level and metapopulation-level models predictions
+
+```{r data-reshape}
+
+raw_data <- read_csv(here("data","tetranychus-metapop-2019-dataset.csv"))
+
+data_wide <- raw_data %>% 
+  mutate(PATCH= paste("P", PATCH, sep = "")) %>% 
+  mutate(PATCH= str_remove(PATCH, "[.]")) %>% 
+### the two lines above make patches names (a) easier to use as column names (letter as 1st character)
+### and consistent with brms standards on response variable names (best to avoid dots and underscore,
+### as some functions will remove them for output names and then matching input and output becomes slightly harder)
+  mutate(LENGTH = fct_recode(factor(LENGTH),
+                             `16 cm (low)` = "16",
+                             `8 cm (medium)` = "8",
+                             `4 cm (high)` = "4"),
+         SHUFFLE = fct_recode(as.factor(SHUFFLE), 
+                              `control`="NO",
+                              `randomized`="R")) %>% 
+  pivot_wider(names_from = PATCH, values_from = AFEMA) %>%
+  drop_na() #3 out of ~550 rows contain NAs in at least one patch, discard
+
+```
+
+```{r data-metapop}
+M_data <- data_wide %>% 
+  mutate(METAPOPSUM = select(.,P11:P33) %>% rowSums()) %>% 
+  select(METAPOP_ID,LENGTH,SHUFFLE,REPLICATE,WEEK,METAPOPSUM)%>% 
+  mutate(LENGTH = factor(LENGTH))
+
+## adding dummy centered variables
+M_data <- M_data %>% 
+  mutate(is.randomized = as.numeric(SHUFFLE =="randomized") - mean(as.numeric(SHUFFLE =="randomized"))) %>% 
+  mutate(is.landscape8 = as.numeric(LENGTH =="8 cm (medium)") - mean(as.numeric(LENGTH =="8 cm (medium)")),
+         is.landscape16 = as.numeric(LENGTH =="16 cm (low)") - mean(as.numeric(LENGTH =="16 cm (low)")))
+
+```
+
+```{r}
+P_tab_plots <- read_csv(here("R_output","P_tab.csv"))
+load(here("R_output","M_mod.Rdata"))
+```
 
 
-# figure comparing metappop and pop results?
+```{r}
+M_tab <- M_data %>% 
+  select(LENGTH,SHUFFLE,METAPOP_ID,
+         is.landscape8,is.landscape16,is.randomized) %>% 
+  add_fitted_draws(M_mod) %>% 
+  group_by(LENGTH,SHUFFLE, METAPOP_ID) %>% 
+  mean_hdi(.value) %>% 
+  rename(.lower_M=".lower",.upper_M=".upper",.value_M=".value")
+
+M_tab_trt <- M_data %>% 
+  select(LENGTH,SHUFFLE,METAPOP_ID,
+         is.landscape8,is.landscape16,is.randomized) %>% 
+  add_fitted_draws(M_mod,re_formula = NA) %>% 
+  group_by(LENGTH,SHUFFLE) %>% 
+  mean_hdi(.value) %>% 
+  rename(.lower_M_trt=".lower",.upper_M_trt=".upper",.value_M_trt=".value")
+
+
+P_tab_M <- P_tab_plots %>% 
+  select(LENGTH,SHUFFLE,METAPOP_ID, P_mean_all) %>% 
+  group_by(LENGTH,SHUFFLE, METAPOP_ID) %>% 
+  mutate(.value_P = P_mean_all*9) %>% 
+  mean_hdi(.value_P) %>% 
+  rename(.lower_P=".lower",.upper_P=".upper")
+
+P_tab_M_trt <- P_tab_plots %>% 
+  select(LENGTH,SHUFFLE,METAPOP_ID, P_mean_all,.iteration) %>% 
+  group_by(LENGTH,SHUFFLE,.iteration) %>% 
+  summarise(.value_P_trt = mean(P_mean_all*9)) %>% 
+  group_by(LENGTH,SHUFFLE) %>% 
+  mean_hdi(.value_P_trt) %>% 
+  rename(.lower_P_trt=".lower",.upper_P_trt=".upper")
+###double check the tabs above
+
+left_join(M_tab,P_tab_M) %>% 
+  left_join(M_tab_trt) %>% 
+  left_join(P_tab_M_trt) %>% 
+  ggplot()+
+  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey95")+
+  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey95")+
+  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey80")+
+  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= SHUFFLE))+
+  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= SHUFFLE))+
+  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= SHUFFLE, size=as.numeric(factor(LENGTH))))+
+  geom_abline(intercept = 0,slope=1)+
+  scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
+  scale_x_continuous("predicted mean metapopulation size based on patch-level model") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+  
+```
+
+THIS IS A DRAFT FIGURE, LOTS OF THINGS TO FINE TUNE
+
+# References
