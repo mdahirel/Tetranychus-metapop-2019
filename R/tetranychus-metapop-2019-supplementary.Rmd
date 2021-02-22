@@ -1,0 +1,90 @@
+---
+title: "Untitled"
+output: word_document
+bibliography: tetranychus-metapop-2019-refs.bib
+csl: journal-of-animal-ecology.csl
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, eval = TRUE, message = FALSE)
+```
+
+```{r}
+library(cmdstanr) ## Stan backend (another)
+library(brms) ## the interface we are using
+
+
+library(tidyverse)
+library(bayesplot)
+library(tidybayes)
+library(matrixStats)
+
+library(QGglmm) ## this package is needed to help convert variance-covariance matrices from latent to data scale
+
+library(patchwork) #plotting
+
+library(here)
+
+## some useful default settings
+# rstan_options(auto_write = TRUE) #for rstan
+options(mc.cores = 4) ## reduce/increase depending on cores available
+N_chains <- 4
+N_warmup <- 2000   ## used for publication: 2000 ## 200 is enough for tests
+N_iter <- N_warmup + 2000  ## recommended for publication-level quality: 2000 iterations post warmup when all chains combined 
+## Nwarmup + 200 is probably good enough for tests
+
+```
+
+
+# S01 – Experimental landscapes – practical details and maintenance during experiments
+All beans leaves used in the experiment were sourced from bean plants grown without using any pesticide and under controlled climatic rooms (21 ± 1°C, L:D 16:8).
+Each landscape was independently mounted on a bed of wet cotton, which was kept soaked with distilled water to provide hydration to the leaves and to create a barrier to prevent the mites from escaping or moving between patches outside the designated routes. To ensure constant hydration, automatic gardening pumps (GARDENA® set 1265-20) were connected to a reserve of distilled water and set to deliver a fixed amount of water through pipes during 1-minute-intervals once every 8 hours. The water flow was monitored to ensure that it never flooded the leaves or the bridges, to prevent additional stress and ensure that the connection between patches was always maintained.
+Landscapes were contained in top-opened plastic crates whose sides were covered in a thick Vaseline layer, to further ensure that no cross-contamination could happen between different metapopulations. The water pipes were coated in Vaseline as well, and were positioned so that there was as little direct contact with the cotton as possible to reduce the chance of mites climbing on them. 
+To ensure resources remained fresh throughout the experiment, every leaf in the setup was refreshed with a new one once a week, at the same time counting was done.  First, adult females were counted on the leaf under a stereomicroscope; then they were moved to the new leaf squares, following the protocol described in the main text. Finally, the old leaves were laid above the new ones, sustained by short sticks to reduce direct contact (to insure ventilation and prevent the spread of molds and fungal infestations), and left in place for 48 hours to allow males and juveniles to move on the new leaves as well. By keeping the old leaves detached from the cotton, we also induced a quick desiccation and a sudden drop of the food quality, thus stimulating the dispersal of the individuals towards the new leaf. After 48 hours, all the old leaves were removed along with the sticks to prevent mites from spinning webs around them.
+
+# S02 – Quantification of connectedness-dependent dispersal mortality
+We tested how dispersal success and individual survival is affected by the length of a Parafilm bridge in a setup similar to the one descripted in the main text, to empirically demonstrate that the lengths we chose in the main experiment do apply a significant selective pressure onto dispersers.
+We tested 4, 8, 16 and 32cm-long bridges, with five independent replicates per length. The plastic bridges were mounted on a bed of cotton, kept wet using abundant distilled water, and connected on one end only to a fresh bean (Phaseolus vulgaris L. cv. Prélude) leaf cut (2.5 x 1.5 cm² rectangle) to provide secure shelters and food sources to the mites. At the opposite ends of each bridge, we placed 10 adult females from our LS-VL stock population using a thin pen brush. Female age was not controlled for, to better approximate a real, non-synchronized population. A strip of wet paper placed orthogonally onto the bridge approximatively 2cm to the end, in order to stop female dispersal until all individuals had been placed, delimited the area the females were placed onto. Similar strips were used to lock the leaves in place on the wet cotton and to the bridges, as well as at the open end of the plastic bridge to keep it adherent to the wet cotton. No paper strips were placed along the bridge itself, so dispersing mites were not prevented from falling into wet cotton. All replicates were initialized at the same time, by removing the paper strips that stopped movement; the bridges were then stored into a climatically controlled room for 24 hours (≈25°C, L:D 16:8). We then counted the number of live mites on the bridges themselves and the arrival leaves; every unaccounted individual was considered dead and sunken into the wet cotton. We analyzed the effect of bridge length (as a continuous variable) on the proportion of dead individuals using a binomial generalized linear model with weakly informative priors ((McElreath, 2020), see Supplementary material Z).
+
+
+```{r data-load-prelim}
+prelim_data <- read_csv(here("data","tetranychus-metapop-2019-bridge-trials.csv"))
+```
+
+```{r prelim-model}
+prelim_data<-prelim_data %>% 
+  mutate(length_centered=LENGTH-mean(LENGTH))
+
+mod_bridge <- brm(
+  Ndead_24h|trials(Nstart)~length_centered,family=binomial, data=prelim_data,
+  chains=4,iter=4000,warmup=2000,
+  prior=c(set_prior("normal(0,1.5)",class="Intercept"),
+          set_prior("normal(0,1)",class="b")),
+  seed=42,backend="cmdstanr"
+)
+
+posterior_samples(mod_bridge) %>% 
+  mean_hdi(b_length_centered)
+```
+
+Results
+The proportion of dead individuals increased with the length of the plastic bridge the mites were placed upon (β = 0.04 [0.02, 0.07], Fig. S02.1).
+```{r prelim-model2}
+tibble(LENGTH=4:32,Nstart=10) %>% 
+  mutate(length_centered=LENGTH-mean(prelim_data$LENGTH)) %>% 
+  add_fitted_draws(mod_bridge) %>% 
+  ggplot()+
+  stat_lineribbon(aes(LENGTH,.value/Nstart), fill="grey",.width=c(0.95))+
+  geom_point(data=prelim_data,aes(LENGTH,Ndead_24h/Nstart),pch=21,fill="black",size=2) + 
+  scale_x_continuous("bridge length (cm)")+
+  scale_y_continuous("proportion dead after 24h") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+```
+Figure S02.1. Mortality rate as a function of bridge length during preliminary trials. Both observed values (dots) and mean [95% credible band] are plotted.
+
+# model code
+
+
+# figure comparing metappop and pop results?

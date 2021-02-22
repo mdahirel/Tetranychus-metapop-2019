@@ -925,39 +925,6 @@ left_join(M_tab,P_tab_M) %>%
   
 ```
 
-# to develop: preliminary trials of bridge lengths
-
-```{r data-load-prelim}
-prelim_data <- read_csv(here("data","tetranychus-metapop-2019-bridge-trials.csv"))
-```
-
-```{r prelim-model}
-prelim_data<-prelim_data %>% 
-  mutate(length_centered=LENGTH-mean(LENGTH))
-
-mod_bridge <- brm(
-  Ndead_24h|trials(Nstart)~length_centered,family=binomial, data=prelim_data,
-  chains=4,iter=4000,warmup=2000,
-  prior=c(set_prior("normal(0,1.5)",class="Intercept"),
-          set_prior("normal(0,1)",class="b")),
-  seed=42,backend="cmdstanr"
-)
-
-posterior_samples(mod_bridge) %>% 
-  mean_hdi(b_length_centered)
-
-tibble(LENGTH=4:32,Nstart=10) %>% 
-  mutate(length_centered=LENGTH-mean(prelim_data$LENGTH)) %>% 
-  add_fitted_draws(mod_bridge) %>% 
-  ggplot()+
-  stat_lineribbon(aes(LENGTH,.value/Nstart), fill="grey",.width=c(0.95))+
-  geom_point(data=prelim_data,aes(LENGTH,Ndead_24h/Nstart),pch=21,fill="black",size=2) + 
-  scale_x_continuous("bridge length (cm)")+
-  scale_y_continuous("proportion dead after 24h") +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")
-```
 
 # References
 
