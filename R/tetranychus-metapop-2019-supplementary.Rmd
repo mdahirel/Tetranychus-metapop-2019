@@ -272,4 +272,28 @@ left_join(M_tab,P_tab_M) %>%
 
 THIS IS A DRAFT FIGURE, LOTS OF THINGS TO FINE TUNE
 
+S05 -- TO COMPLETE -- something about the simulation
+
+
+```{r import-simulation-output}
+sim_output <- read_csv(here("simulations_output","tetranychus-metapop-2019-simulations-output.csv"))
+
+# one row = the summarised outcome of one simulation run
+# disp_prop: set dispersal probability
+# alphavar, betavar, betavar_, and gammavar: variabilities following Wang and Loreau 2014
+# betavar_ is the multiplicative one, betavar the additive one
+# size: mean patch population size, provided separately for each type of local connectedness (center, side, corner)
+# alphavar is also provided separately for eacg type of local connectedness, in addition to the main one
+```
+
+```{r test-plot}
+ggplot(sim_output)+
+  geom_point(aes(x=disp_prop,y=betavar_),size=2,col="grey80")+
+  geom_smooth(aes(x=disp_prop,y=betavar_),method="lm")+
+  scale_y_continuous("beta variability (multiplicative)")+
+  scale_x_continuous("dispersal variable (which one??)") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
+
 # References
