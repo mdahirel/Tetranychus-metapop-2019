@@ -293,13 +293,81 @@ sim_mortality <- read_csv(here("simulations_output","tetranychus-metapop-2019-si
 ```
 
 ```{r test-plot}
-ggplot(sim_output)+
-  geom_point(aes(x=disp_prop,y=betavar_),size=2,col="grey80")+
-  geom_smooth(aes(x=disp_prop,y=betavar_),method="lm")+
-  scale_y_continuous("beta variability (multiplicative)")+
-  scale_x_continuous("dispersal variable (which one??)") +
-  cowplot::theme_half_open(11) +
+
+A1 <- ggplot(sim_mortality,aes(x=disp_mort,y=alphavar))+
+  geom_point(size=2,col="grey80")+
+  geom_smooth(method="gam",col="black")+
+  scale_y_continuous(expression(paste(alpha, " variability")),
+                     lim=c(0.01,0.025))+
+  scale_x_continuous("")
+
+A2 <- ggplot(sim_propensity,aes(x=disp_prop,y=alphavar))+
+  geom_point(size=2,col="grey80")+
+  geom_smooth(method="gam",col="black")+
+  scale_y_continuous("", lim=c(0.01,0.025))+
+  scale_x_continuous("") 
+
+B1 <- ggplot(sim_mortality,aes(x=disp_mort,y=1/betavar_))+
+  geom_point(size=2,col="grey80")+
+  geom_smooth(method="gam",col="black")+
+  scale_y_continuous(expression(paste("Spatial synchrony (", phi1, " = ", 1/beta,")")),
+                     lim=c(0.05,0.25))+
+  scale_x_continuous("")
+
+B2 <- ggplot(sim_propensity,aes(x=disp_prop,y=1/betavar_))+
+  geom_point(size=2,col="grey80")+
+  geom_smooth(method="gam",col="black")+
+  scale_y_continuous("", lim=c(0.05,0.25))+
+  scale_x_continuous("") 
+
+C1 <- ggplot(sim_mortality,aes(x=disp_mort,y=gammavar))+
+  geom_point(size=2,col="grey80")+
+  geom_smooth(method="gam",col="black")+
+  scale_y_continuous(expression(paste(gamma, " variability")),
+                     lim=c(0.001,0.0055))+
+  scale_x_continuous("Dispersal cost (mortality)")
+
+C2 <- ggplot(sim_propensity,aes(x=disp_prop,y=gammavar))+
+  geom_point(size=2,col="grey80")+
+  geom_smooth(method="gam",col="black")+
+  scale_y_continuous("", lim=c(0.001,0.0055))+
+  scale_x_continuous("Dispersal propensity (emigration)") 
+
+D1 <- sim_mortality %>% 
+  select(-c(`alphavar corner`,`alphavar center`,`alphavar side`)) %>% 
+  pivot_longer(cols = c(`size corner`,`size center`,`size side`)) %>%  
+  mutate(`local connectedness`=fct_recode(factor(name),
+                                          `center (high)` = "size center", 
+                                          `side (medium)` = "size side", 
+                                          `corner (low)`= "size corner")) %>% 
+  mutate(`local connectedness` = fct_relevel(`local connectedness`, "center (high)", after=Inf)) %>% 
+  ggplot()+
+  geom_point(aes(x=disp_mort,y=value,col=`local connectedness`),size=2,alpha=0.05)+
+  geom_smooth(aes(x=disp_mort,y=value,col=`local connectedness`),method="gam")+
+  scale_colour_manual(values=c("#e66101", "#fdb863", "#5e3c99"))+
+  scale_y_continuous("mean local population size",
+                     lim=c(20,150))+
+  scale_x_continuous("Dispersal cost (mortality)")
+
+D2 <- sim_propensity %>% 
+  select(-c(`alphavar corner`,`alphavar center`,`alphavar side`)) %>% 
+  pivot_longer(cols = c(`size corner`,`size center`,`size side`)) %>% 
+  mutate(`local connectedness`=fct_recode(factor(name),
+                                          `center (high)` = "size center", 
+                                          `side (medium)` = "size side", 
+                                          `corner (low)`= "size corner")) %>% 
+  mutate(`local connectedness` = fct_relevel(`local connectedness`, "center (high)", after=Inf)) %>% 
+  ggplot()+
+  geom_point(aes(x=disp_prop,y=value,col=`local connectedness`),size=2,alpha=0.05)+
+  geom_smooth(aes(x=disp_prop,y=value,col=`local connectedness`),method="gam")+
+  scale_colour_manual(values=c("#e66101", "#fdb863", "#5e3c99"))+
+  scale_y_continuous("", lim=c(20,150))+
+  scale_x_continuous("Dispersal propensity (emigration)") 
+
+  ((A1|A2)/(B1|B2)/(C1|C2)/((D1|D2)+plot_layout(guides="collect")))  &
+  cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+
 ```
 
 # References
