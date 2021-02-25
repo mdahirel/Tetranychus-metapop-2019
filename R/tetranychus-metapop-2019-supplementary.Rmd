@@ -276,14 +276,20 @@ S05 -- TO COMPLETE -- something about the simulation
 
 
 ```{r import-simulation-output}
-sim_output <- read_csv(here("simulations_output","tetranychus-metapop-2019-simulations-output.csv"))
+sim_propensity <- read_csv(here("simulations_output","tetranychus-metapop-2019-sims-disp-propensity.csv"))
+sim_mortality <- read_csv(here("simulations_output","tetranychus-metapop-2019-sims-disp-mortality.csv"))
 
 # one row = the summarised outcome of one simulation run
-# disp_prop: set dispersal probability
 # alphavar, betavar, betavar_, and gammavar: variabilities following Wang and Loreau 2014
 # betavar_ is the multiplicative one, betavar the additive one
 # size: mean patch population size, provided separately for each type of local connectedness (center, side, corner)
 # alphavar is also provided separately for eacg type of local connectedness, in addition to the main one
+
+# in simulations where dispersal propensity was made to vary:
+# disp_prop: set dispersal probability
+
+# in simulations where dispersal mortality was made to vary:
+# disp_mort: set dispersal mortality
 ```
 
 ```{r test-plot}
