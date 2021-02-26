@@ -217,6 +217,10 @@ load(here("R_output","M_mod.Rdata"))
 
 
 ```{r}
+M_tab_obs <- M_data %>% 
+  group_by(METAPOP_ID) %>% 
+  summarise(METAPOP_MEAN=mean(METAPOPSUM))
+
 M_tab <- M_data %>% 
   select(LENGTH,SHUFFLE,METAPOP_ID,
          is.landscape8,is.landscape16,is.randomized) %>% 
@@ -225,11 +229,11 @@ M_tab <- M_data %>%
   mean_hdi(.value) %>% 
   rename(.lower_M=".lower",.upper_M=".upper",.value_M=".value")
 
-M_tab_trt <- M_data %>% 
-  select(LENGTH,SHUFFLE,METAPOP_ID,
+M_tab_shuffle <- M_data %>% 
+  select(SHUFFLE,METAPOP_ID,
          is.landscape8,is.landscape16,is.randomized) %>% 
   add_fitted_draws(M_mod,re_formula = NA) %>% 
-  group_by(LENGTH,SHUFFLE) %>% 
+  group_by(SHUFFLE) %>% 
   mean_hdi(.value) %>% 
   rename(.lower_M_trt=".lower",.upper_M_trt=".upper",.value_M_trt=".value")
 
@@ -241,36 +245,99 @@ P_tab_M <- P_tab_plots %>%
   mean_hdi(.value_P) %>% 
   rename(.lower_P=".lower",.upper_P=".upper")
 
-P_tab_M_trt <- P_tab_plots %>% 
-  select(LENGTH,SHUFFLE,METAPOP_ID, P_mean_all,.iteration) %>% 
-  group_by(LENGTH,SHUFFLE,.iteration) %>% 
+P_tab_M_shuffle <- P_tab_plots %>% 
+  select(SHUFFLE,METAPOP_ID, P_mean_all,.iteration) %>% 
+  group_by(SHUFFLE,.iteration) %>% 
   summarise(.value_P_trt = mean(P_mean_all*9)) %>% 
-  group_by(LENGTH,SHUFFLE) %>% 
+  group_by(SHUFFLE) %>% 
   mean_hdi(.value_P_trt) %>% 
   rename(.lower_P_trt=".lower",.upper_P_trt=".upper")
 ###double check the tabs above
 
 left_join(M_tab,P_tab_M) %>% 
-  left_join(M_tab_trt) %>% 
-  left_join(P_tab_M_trt) %>% 
+  left_join(M_tab_shuffle) %>% 
+  left_join(P_tab_M_shuffle) %>% 
   ggplot()+
   geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey95")+
   geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey95")+
   geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey80")+
   geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= SHUFFLE))+
   geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= SHUFFLE))+
-  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= SHUFFLE, size=as.numeric(factor(LENGTH))))+
+  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= SHUFFLE))+
   geom_abline(intercept = 0,slope=1)+
   scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
   scale_x_continuous("predicted mean metapopulation size based on patch-level model") +
-  scale_size(guide="none")+
   cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
+  theme(legend.title=element_blank())
   
 ```
 
 **Figure S04.1** -- Something somethingTHIS IS A DRAFT FIGURE, LOTS OF THINGS TO FINE TUNE (legend of size of points for the average to redo properly)
 
+```{r}
+M_tab_length <- M_data %>% 
+  select(LENGTH,METAPOP_ID,
+         is.landscape8,is.landscape16,is.randomized) %>% 
+  add_fitted_draws(M_mod,re_formula = NA) %>% 
+  group_by(LENGTH) %>% 
+  mean_hdi(.value) %>% 
+  rename(.lower_M_trt=".lower",.upper_M_trt=".upper",.value_M_trt=".value")
+
+P_tab_M_length <- P_tab_plots %>% 
+  select(LENGTH,METAPOP_ID, P_mean_all,.iteration) %>% 
+  group_by(LENGTH,.iteration) %>% 
+  summarise(.value_P_trt = mean(P_mean_all*9)) %>% 
+  group_by(LENGTH) %>% 
+  mean_hdi(.value_P_trt) %>% 
+  rename(.lower_P_trt=".lower",.upper_P_trt=".upper")
+###double check the tabs above
+
+left_join(M_tab,P_tab_M) %>% 
+  left_join(M_tab_length) %>% 
+  left_join(P_tab_M_length) %>% 
+  ggplot()+
+  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey95")+
+  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey95")+
+  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey80")+
+  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= LENGTH))+
+  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= LENGTH))+
+  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= LENGTH))+
+  geom_abline(intercept = 0,slope=1)+
+  scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
+  scale_x_continuous("predicted mean metapopulation size based on patch-level model") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
+  theme(legend.title=element_blank())
+  
+```
+
+```{r}
+left_join(M_tab,M_tab_obs) %>% 
+  ggplot()+
+  geom_segment(aes(x=METAPOP_MEAN,xend=METAPOP_MEAN,y=.lower_M,yend=.upper_M),col="grey95")+
+  geom_point(aes(x=METAPOP_MEAN,y=.value_M),size=2,col="grey80")+
+  geom_abline(intercept = 0,slope=1)+
+  scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
+  scale_x_continuous("observed") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
+  theme(legend.title=element_blank())
+```
+
+
+```{r}
+left_join(P_tab_M,M_tab_obs) %>% 
+  ggplot()+
+  geom_segment(aes(x=METAPOP_MEAN,xend=METAPOP_MEAN,y=.lower_P,yend=.upper_P),col="grey95")+
+  geom_point(aes(x=METAPOP_MEAN,y=.value_P),size=2,col="grey80")+
+  geom_abline(intercept = 0,slope=1)+
+  scale_y_continuous("predicted mean metapopulation size based on patch-level model")+
+  scale_x_continuous("observed") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
+  theme(legend.title=element_blank())
+```
 # S05 -- TO COMPLETE -- something about the simulation
 
 
