@@ -1,6 +1,6 @@
 ---
 title: "Supplementary Material for \"Individual heterogeneity and its importance for metapopulation dynamics\""
-authors: Stefano masier, Maxime Dahirel, Frederik Mortier, Dries Bonte
+authors: Stefano Masier, Maxime Dahirel, Frederik Mortier, Dries Bonte
 output: 
   html_document:
     theme: yeti
@@ -116,35 +116,36 @@ Intuition behind this formulation (latent residuals via OLRE + specified covaria
 The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
 
 $$
-\begin{equation*}
-N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}), \\
-
-\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j,x,y}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},\\
-
-\alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha}),\\
-
-\gamma_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{\eta}),\\
-
-\left[\begin{matrix}
-\eta_{[i,1,1,t]} \\ ... \\ \eta_{[i,3,3,t]} 
-\end{matrix}\right] \sim {\textrm{MVNormal}}\left(
-
-\left[\begin{matrix}
-0 \\ ... \\ 0 
-\end{matrix}\right] ,
-\boldsymbol{\Omega}_{[i]}\right),\\
-
+N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}),
+$$
+$$
+\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j,x,y}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},
+$$
+$$
+\alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha}),
+$$
+$$
+\gamma_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{\eta}),
+$$
+$$
+\begin{bmatrix} \eta_{[i,1,1,t]} \\ ... \\ \eta_{[i,3,3,t]} \end{bmatrix} 
+\sim 
+\textrm{MVNormal}
+\begin{pmatrix}
+\begin{bmatrix} 0 \\ ... \\ 0  \end{bmatrix} ,
+\boldsymbol{\Omega}_{[i]}
+\end{pmatrix},
+$$
+$$
 \boldsymbol{\Omega}_{[i]} = 
-\left(\begin{matrix}
+\begin{bmatrix}
 \sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
-\end{matrix}\right)  
+\end{bmatrix}
 \boldsymbol{R}_{[i]}
-\left(\begin{matrix}
+\begin{bmatrix}
 \sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
-\end{matrix}\right).    \\
-
-\end{equation*}
-$$  
+\end{bmatrix}
+$$
 
 where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following , this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
 
@@ -153,18 +154,21 @@ where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ a
 Similarly, we can write a (much simpler) model for the total metapopulation size (total number of adult females) $M$. Because there are no correlations to worry about, we can use a negative binomial model here to model the within-replicate temporal variation:
 
 $$
-\begin{equation*}
-M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}), \\
-\log(\lambda_{[i]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j}} + \gamma_{[i]},\\
-
-\log(\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},\\
-
-\gamma_{[i]} \sim \mathrm{Normal}(0, \sigma_{\gamma}),\\
-
-\eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).\\
-\end{equation*}
+M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}),
+$$
+$$
+\log(\lambda_{[i]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j}} + \gamma_{[i]},
+$$
+$$
+\log(\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},
+$$
+$$
+\gamma_{[i]} \sim \mathrm{Normal}(0, \sigma_{\gamma}),
+$$
+$$
+\eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).
 $$  
-Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similalry, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape.
+Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similarly, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape.
 
 ## Rationale behind priors
 
@@ -272,7 +276,7 @@ left_join(M_tab,P_tab_M) %>%
 
 THIS IS A DRAFT FIGURE, LOTS OF THINGS TO FINE TUNE
 
-S05 -- TO COMPLETE -- something about the simulation
+# S05 -- TO COMPLETE -- something about the simulation
 
 
 ```{r import-simulation-output}

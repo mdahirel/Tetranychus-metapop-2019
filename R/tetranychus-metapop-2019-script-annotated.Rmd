@@ -212,62 +212,68 @@ beta2_wang_loreau <- function(varcorr, means) {
 ### Patch-level model
 
 We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment, local connectedness and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
-You can see we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches form the same replicate can be correlated. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later. It is important to note that the presence of the temporal matrices it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
+You can see below that we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches form the same replicate can be correlated. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later. It is important to note that the presence of the temporal matrices it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
 
-Intuition behind this formulation (latent residuals via OLRE + specify covariance structure) is the same as in this comment by Paul Bürkner (https://github.com/paul-buerkner/brms/issues/600#issuecomment-511677732) 
-
+Intuition behind this formulation (latent residuals via OLRE + specified covariance structure) is the same as in this comment by Paul Bürkner (https://github.com/paul-buerkner/brms/issues/600#issuecomment-511677732) 
 
 The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
 
-$$\begin{equation*}
-N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}), \\
-
-\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j,x,y}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},\\
-
-\alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha}),\\
-
-\gamma_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{\eta}),\\
-
-\left[\begin{matrix}
-\eta_{[i,1,1,t]} \\ ... \\ \eta_{[i,3,3,t]} 
-\end{matrix}\right] \sim {\textrm{MVNormal}}\left(
-
-\left[\begin{matrix}
-0 \\ ... \\ 0 
-\end{matrix}\right] ,
-\boldsymbol{\Omega}_{[i]}\right),\\
-
+$$
+N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}),
+$$
+$$
+\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j,x,y}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},
+$$
+$$
+\alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha}),
+$$
+$$
+\gamma_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{\eta}),
+$$
+$$
+\begin{bmatrix} \eta_{[i,1,1,t]} \\ ... \\ \eta_{[i,3,3,t]} \end{bmatrix} 
+\sim 
+\textrm{MVNormal}
+\begin{pmatrix}
+\begin{bmatrix} 0 \\ ... \\ 0  \end{bmatrix} ,
+\boldsymbol{\Omega}_{[i]}
+\end{pmatrix},
+$$
+$$
 \boldsymbol{\Omega}_{[i]} = 
-\left(\begin{matrix}
+\begin{bmatrix}
 \sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
-\end{matrix}\right)  
+\end{bmatrix}
 \boldsymbol{R}_{[i]}
-\left(\begin{matrix}
+\begin{bmatrix}
 \sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
-\end{matrix}\right),    \\
+\end{bmatrix}
+$$
 
-\end{equation*}$$
-
-where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix.
+where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following , this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
 
 ### Meta-population model
 
-
-Similarly, we can write a (much simpler) model for the total metapopulation size $M$ (the `METAPOPSUM` column). Because there are no correlations to worry about, we can use a negative binomial model here to model the within-replicate temporal variation:
+Similarly, we can write a (much simpler) model for the total metapopulation size (total number of adult females) $M$. Because there are no correlations to worry about, we can use a negative binomial model here to model the within-replicate temporal variation:
 
 $$
-\begin{equation*}
-M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}) \\
-\log(\lambda_{[i]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j}} + \gamma_{[i]},\\
-
-\log(\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},\\
-
-\gamma_{[i]} \sim \mathrm{Normal}(0, \sigma_{\gamma}),\\
-
-\eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).\\
-\end{equation*}
+M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}),
 $$
-Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similalry, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape.
+$$
+\log(\lambda_{[i]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j}} + \gamma_{[i]},
+$$
+$$
+\log(\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},
+$$
+$$
+\gamma_{[i]} \sim \mathrm{Normal}(0, \sigma_{\gamma}),
+$$
+$$
+\eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).
+$$  
+
+Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similarly, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape.
+
 
 ## 2B - Implementation - formulas
 
