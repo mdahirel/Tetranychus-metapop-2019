@@ -250,7 +250,7 @@ $$
 \end{bmatrix}
 $$
 
-where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following , this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
+where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following schielzethSimpleMeansImprove2010, this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
 
 ### Meta-population model
 

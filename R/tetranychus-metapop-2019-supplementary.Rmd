@@ -1,19 +1,15 @@
 ---
 title: "Supplementary Material for \"Individual heterogeneity and its importance for metapopulation dynamics\""
-authors: Stefano Masier, Maxime Dahirel, Frederik Mortier, Dries Bonte
-output: 
-  html_document:
-    theme: yeti
-    toc: TRUE
-    toc_float: TRUE
+author: Stefano Masier, Maxime Dahirel, Frederik Mortier, Dries Bonte
+output: pdf_document
 editor_options:
   chunk_output_type: console
 bibliography: tetranychus-metapop-2019-refs.bib
-csl: journal-of-animal-ecology.csl
+csl: ecology-letters.csl
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, eval = TRUE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, eval = TRUE, message = FALSE, warning = FALSE)
 ```
 
 ```{r}
@@ -54,7 +50,7 @@ Landscapes were contained in top-opened plastic crates whose sides were covered 
 
 We tested how dispersal success and individual survival is affected by the length of a Parafilm bridge in a setup similar to the one described in the main text, to empirically demonstrate that the lengths we chose in the main experiment do apply a significant selective pressure onto dispersers.
 
-We tested 4, 8, 16 and 32 cm-long bridges, with five independent replicates per length. The plastic bridges were mounted on a bed of cotton, kept wet using abundant distilled water, and connected on one end only to a fresh bean (*Phaseolus vulgaris* L. cv. Prélude) leaf cut (2.5 x 1.5 cm^2^ rectangle) to provide secure shelters and food sources to the mites. At the opposite ends of each bridge, we placed 10 adult females from our LS-VL stock population using a thin pen brush. Female age was not controlled for, to better approximate a real, non-synchronized population. A strip of wet paper placed orthogonally onto the bridge approximately 2cm to the end, in order to stop female dispersal until all individuals had been placed, delimited the area the females were placed onto. Similar strips were used to lock the leaves in place on the wet cotton and to the bridges, as well as at the open end of the plastic bridge to keep it adherent to the wet cotton. No paper strips were placed along the bridge itself, so dispersing mites were not prevented from falling into wet cotton. All replicates were initialized at the same time, by removing the paper strips that stopped movement; the bridges were then stored into a climatically controlled room for 24 hours ( $\simeq$ 25°C, L:D 16:8). We then counted the number of live mites on the bridges themselves and the arrival leaves; every unaccounted individual was considered dead and sunken into the wet cotton. We analyzed the effect of bridge length (as a continuous variable) on the proportion of dead individuals using a binomial generalized linear model with weakly informative priors [@mcelreath2020; see Supplementary material S03].
+We tested 4, 8, 16 and 32 cm-long bridges, with five independent replicates per length. The plastic bridges were mounted on a bed of cotton, kept wet using abundant distilled water, and connected on one end only to a fresh bean (*Phaseolus vulgaris* L. cv. Prélude) leaf cut (2.5 x 1.5 cm^2^ rectangle) to provide secure shelters and food sources to the mites. At the opposite ends of each bridge, we placed 10 adult females from our LS-VL stock population using a thin pen brush. Female age was not controlled for, to better approximate a real, non-synchronized population. A strip of wet paper placed orthogonally onto the bridge approximately 2cm to the end, in order to stop female dispersal until all individuals had been placed, delimited the area the females were placed onto. Similar strips were used to lock the leaves in place on the wet cotton and to the bridges, as well as at the open end of the plastic bridge to keep it adherent to the wet cotton. No paper strips were placed along the bridge itself, so dispersing mites were not prevented from falling into wet cotton. All replicates were initialized at the same time, by removing the paper strips that stopped movement; the bridges were then stored into a climatically controlled room for 24 hours ($\simeq$ 25°C, L:D 16:8). We then counted the number of live mites on the bridges themselves and the arrival leaves; every unaccounted individual was considered dead and sunken into the wet cotton. We analyzed the effect of bridge length (as a continuous variable) on the proportion of dead individuals using a binomial generalized linear model with weakly informative priors [see Supplementary material S03; and @mcelreath2020].
 
 ```{r data-load-prelim}
 prelim_data <- read_csv(here("data","tetranychus-metapop-2019-bridge-trials.csv"))
@@ -86,9 +82,7 @@ beta_slope<-posterior_samples(mod_bridge) %>%
 
 The proportion of dead individuals increased with the length of the plastic bridge the mites were placed upon ($\beta$ = `r round(beta_slope$b_length_centered,2)` [`r round(beta_slope$.lower,2)`, `r round(beta_slope$.upper,2)`], Fig. S02.1).
 
-```{r prelim-model2}
-
-
+```{r prelim-plot, fig.width=4, fig.height=4}
 tibble(LENGTH=4:32,Nstart=10) %>% 
   mutate(length_centered=LENGTH-mean(prelim_data$LENGTH)) %>% 
   add_fitted_draws(mod_bridge) %>% 
@@ -102,7 +96,7 @@ tibble(LENGTH=4:32,Nstart=10) %>%
   theme(legend.position = "none")
 ```
 
-**Figure S02.1.** Mortality rate as a function of bridge length during preliminary trials. Both observed values (dots) and mean [95% credible band] are plotted.
+**Figure S02.1** -- Mortality rate as a function of bridge length during preliminary trials. Both observed values (dots) and posterior means with 95% credible band are plotted.
 
 # S03 -- Models description
 
@@ -132,7 +126,7 @@ $$
 \sim 
 \textrm{MVNormal}
 \begin{pmatrix}
-\begin{bmatrix} 0 \\ ... \\ 0  \end{bmatrix} ,
+\begin{bmatrix} 0 \\ ... \\ 0  \end{bmatrix},
 \boldsymbol{\Omega}_{[i]}
 \end{pmatrix},
 $$
@@ -144,10 +138,10 @@ $$
 \boldsymbol{R}_{[i]}
 \begin{bmatrix}
 \sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
-\end{bmatrix}
+\end{bmatrix},
 $$
 
-where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following , this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
+where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following @schielzethSimpleMeansImprove2010, this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
 
 ## Meta-population model
 
@@ -172,7 +166,7 @@ Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for t
 
 ## Rationale behind priors
 
-Given the models complexity, we combined general weakly informative priors sensu McElreath [-@mcelreath2020] with more informative priors based on preexisting abundance data [@deroissartDataSpatialSpatiotemporal2016; @deroissartSpatialSpatiotemporalVariation2015]. Ignoring these prior sources of information led to models predicting consistently too high abundances (not shown), although relative differences between treatments remained qualitatively similar.
+Given the models complexity, we combined general weakly informative priors sensu McElreath [-@mcelreath2020] with more informative priors based on preexisting abundance data from a previous study [@deroissartDataSpatialSpatiotemporal2016; @deroissartSpatialSpatiotemporalVariation2015]. Ignoring these prior sources of information led to models predicting consistently too high abundances (not shown), although relative differences between treatments remained qualitatively similar.
 
 In the patch-level model, priors for the fixed-effects coefficients $\beta_{j}$ (except $\beta_{0}$) and for the random effect correlation matrices followed McElreath suggestions (here $\mathrm{Normal}(0,1)$ and $\mathrm{LKJCorr}(2)$ respectively). Priors for the intercept $\beta_{0}$ and for the random effect standard deviations were based on the whole distribution of prior abundance data [@deroissartDataSpatialSpatiotemporal2016; @deroissartSpatialSpatiotemporalVariation2015] and on the variance of that distribution, both on the log scale. We used a $\mathrm{Normal}(2.8,1)$ prior for $\beta_{0}$, and a $\mathrm{Half-Normal}(0,0.5)$ for the $\sigma$ parameters (when summing across the different random effect levels, this gives an overall prior for log-scale total variance centred on roughly 1, matching prior information).
 
@@ -269,12 +263,13 @@ left_join(M_tab,P_tab_M) %>%
   geom_abline(intercept = 0,slope=1)+
   scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
   scale_x_continuous("predicted mean metapopulation size based on patch-level model") +
+  scale_size(guide="none")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
   
 ```
 
-THIS IS A DRAFT FIGURE, LOTS OF THINGS TO FINE TUNE
+**Figure S04.1** -- Something somethingTHIS IS A DRAFT FIGURE, LOTS OF THINGS TO FINE TUNE (legend of size of points for the average to redo properly)
 
 # S05 -- TO COMPLETE -- something about the simulation
 
@@ -296,8 +291,7 @@ sim_mortality <- read_csv(here("simulations_output","tetranychus-metapop-2019-si
 # disp_mort: set dispersal mortality
 ```
 
-```{r test-plot}
-
+```{r making-s5-plot}
 A1 <- ggplot(sim_mortality,aes(x=disp_mort,y=alphavar))+
   geom_point(size=2,col="grey80")+
   geom_smooth(method="gam",col="black")+
@@ -366,12 +360,16 @@ D2 <- sim_propensity %>%
   geom_smooth(aes(x=disp_prop,y=value,col=`local connectedness`),method="gam")+
   scale_colour_manual(values=c("#e66101", "#fdb863", "#5e3c99"))+
   scale_y_continuous("", lim=c(20,150))+
-  scale_x_continuous("Dispersal propensity (emigration)") 
+  scale_x_continuous("Dispersal propensity (emigration)")
+```
 
-  ((A1|A2)/(B1|B2)/(C1|C2)/((D1|D2)+plot_layout(guides="collect")))  &
+
+```{r displaying-s5-plot, fig.width=7, fig.height=8}
+((A1|A2)/(B1|B2)/(C1|C2)/((D1|D2)+plot_layout(guides="collect")))  &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-
 ```
+
+**Figure S05.1** -- Something something simulations results
 
 # References
