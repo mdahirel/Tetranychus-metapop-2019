@@ -476,7 +476,7 @@ ggplot(P_data) +
 
 ```
 
-It's fairly easy to see that the negative binomial model for patches clearly misses the fact that the whole metapopulation varies somewhat synchronously from week to week, and is thus incomplete.
+It's fairly easy to see that the negative binomial model for patches clearly misses the fact that the patches in a given metapopulation vary somewhat synchronously from week to week, and is thus incomplete.
 
 # Part 3 - Obtaining key metrics from model output
 
