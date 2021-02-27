@@ -154,7 +154,7 @@ $$
 \log(\lambda_{[i]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j}} + \gamma_{[i]},
 $$
 $$
-\log(\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},
+\log(1/\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},
 $$
 $$
 \gamma_{[i]} \sim \mathrm{Normal}(0, \sigma_{\gamma}),
@@ -162,7 +162,7 @@ $$
 $$
 \eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).
 $$  
-Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similarly, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape.
+Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similarly, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape. We fit the model for the overdispersion parameter on its log-transformed inverse: the inverse transformation (as suggested in https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations) to avoid giving too much weight to high overdispersion, the log transformation to keep things > 0.
 
 ## Rationale behind priors
 
@@ -170,7 +170,7 @@ Given the models complexity, we combined general weakly informative priors sensu
 
 In the patch-level model, priors for the fixed-effects coefficients $\beta_{j}$ (except $\beta_{0}$) and for the random effect correlation matrices followed McElreath suggestions (here $\mathrm{Normal}(0,1)$ and $\mathrm{LKJCorr}(2)$ respectively). Priors for the intercept $\beta_{0}$ and for the random effect standard deviations were based on the whole distribution of prior abundance data [@deroissartDataSpatialSpatiotemporal2016; @deroissartSpatialSpatiotemporalVariation2015] and on the variance of that distribution, both on the log scale. We used a $\mathrm{Normal}(2.8,1)$ prior for $\beta_{0}$, and a $\mathrm{Half-Normal}(0,0.5)$ for the $\sigma$ parameters (when summing across the different random effect levels, this gives an overall prior for log-scale total variance centred on roughly 1, matching prior information).
 
-In the metapopulation-level model, we replaced the prior for $\beta_{0}$ by $\mathrm{Normal}(5,1)$ in order to match the fact that metapopulations contain 9 patches, and used general purpose $\mathrm{Normal}(0,1)$ for all parameters linked to the shape $\phi$.
+In the metapopulation-level model, we replaced the prior for $\beta_{0}$ by $\mathrm{Normal}(5,1)$ in order to match the fact that metapopulations contain 9 patches, and used general purpose $\mathrm{Normal}(0,1)$ for all fixed-effects parameters linked to the shape $\phi$.
 
 # S04 -- Comparison between patch-level and metapopulation-level models predictions
 
