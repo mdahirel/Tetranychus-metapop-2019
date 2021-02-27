@@ -370,7 +370,7 @@ M_prior <- c(
 
 We can now fit the models based on the choices we made earlier
 
-```{r model_fitting}
+```{r P_model_fitting}
 if(file.exists(here("R_output","P_mod.Rdata"))){
   # this if-else statement is avoid re-fitting a model if there is already one existing in R_output
   # to override, re-run the model and re-save manually by selecting only the relevant code lines (or delete the Rdata object before relaunching this code chunk)
@@ -387,7 +387,7 @@ save(list=c("P_mod"), file=here("R_output","P_mod.Rdata"))
 ```
 
 
-```{r }
+```{r M_model_fitting}
 if(file.exists(here("R_output","M_mod.Rdata"))){
   load(here("R_output","M_mod.Rdata"))
   }else{
@@ -423,6 +423,60 @@ pp_check(P_mod, nsamples = 20)
 ## can the model generate the observed data? (there are many ppcheck possibles, see the help of the bayesplot package)
 ## for P_mod, basic pp_checks will return perfect fits, since there are obs-level random effects
 ```
+
+## 2E - couldn't the patch-level model be simpler?
+
+One may wonder why go that far for the patch-level model. Surely one could simply use a negative binomial model similar to the metapopulation-level one, just one level lower. Not quite. First, we can't gather the variables needed to estimate alpha, beta and gamma variabilities from such a model. And second, such a model assumes that within-patch temporal variation is stochastic, and ignores across-patch temporal covariation. Let's have a quick look:
+
+```{r P_model_fitting_alternate}
+### adapted formula
+P_formula2 <- bf(
+  AFEMA~(is.local5 + is.local3 + is.landscape8 + is.landscape16)*is.randomized+
+    (1|METAPOP_ID/PATCH),
+  nlf(shape~1/exp(loginvshape)),
+  loginvshape~(is.local5 + is.local3 + is.landscape8 + is.landscape16)*is.randomized+
+      (1|METAPOP_ID/PATCH),
+  family=negbinomial(link_shape="identity"))
+
+### adapted priors
+P_prior2 <- c(
+  ### UPDATED PRIORS FOR THE PATCH LEVEL MODEL
+  set_prior("normal(2.8,1)", class = "Intercept"),
+  set_prior("normal(0,1)", class = "b"),
+  set_prior("normal(0,1)", class="b",nlpar="loginvshape"),
+  set_prior("normal(0,1)", class = "sd", nlpar="loginvshape"),
+  set_prior("normal(0,0.5)", class = "sd")
+)
+
+### adapted model
+if(file.exists(here("R_output","P_mod_alt.Rdata"))){
+    load(here("R_output","P_mod_alt.Rdata"))
+  }else{
+P_mod2 <- brm(formula=P_formula2, prior=P_prior2, data = P_data, 
+             iter=N_iter,warmup=N_warmup,chains=N_chains,
+             seed=42, control=list(adapt_delta=0.9,max_treedepth=15),
+             backend="cmdstanr")
+save(list=c("P_mod2"), file=here("R_output","P_mod_alt.Rdata"))
+  }
+
+### let's build some residuals (ratio between observed values and predicted patch-level means)
+P_data$alt_residuals=(P_data$AFEMA/fitted(P_mod2, re_formula=~(1|METAPOP_ID/PATCH))[,1])
+
+ggplot(P_data) +
+  geom_boxplot(aes(factor(WEEK),alt_residuals))+
+  facet_wrap(~METAPOP_ID)+geom_hline(yintercept=1,col="red")+
+  coord_cartesian(ylim=c(0,4)) #cropping outlier dots to better see the boxes
+## clear evidence of week-to-week metapopulation-wide fluctuations that are not accounted for by the negative binomial model
+
+ggplot(P_data) +
+  geom_boxplot(aes(factor(PATCH),alt_residuals))+
+  facet_wrap(~METAPOP_ID)+geom_hline(yintercept=1,col="red")+
+  coord_cartesian(ylim=c(0,4))
+## while patch-to-patch variations are well accounted for, as one would expect from model structure
+
+```
+
+It's fairly easy to see that the negative binomial model for patches clearly misses the fact that the whole metapopulation varies somewhat synchronously from week to week, and is thus incomplete.
 
 # Part 3 - Obtaining key metrics from model output
 
