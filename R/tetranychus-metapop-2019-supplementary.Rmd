@@ -172,7 +172,7 @@ In the patch-level model, priors for the fixed-effects coefficients $\beta_{j}$ 
 
 In the metapopulation-level model, we replaced the prior for $\beta_{0}$ by $\mathrm{Normal}(5,1)$ in order to match the fact that metapopulations contain 9 patches, and used general purpose $\mathrm{Normal}(0,1)$ for all fixed-effects parameters linked to the shape $\phi$.
 
-# S04 -- Comparison between patch-level and metapopulation-level models predictions
+# S04 -- Comparisons between patch-level model predictions, metapopulation-level model predictions, and observed data
 
 ```{r data-reshape}
 
@@ -256,28 +256,6 @@ P_tab_M_shuffle <- P_tab_plots %>%
 ```
 
 
-```{r fig.width=5.5, fig.height=4.5}
-left_join(M_tab,P_tab_M) %>% 
-  left_join(M_tab_shuffle) %>% 
-  left_join(P_tab_M_shuffle) %>% 
-  ggplot()+
-  geom_abline(intercept = 0,slope=1,lty=2)+
-  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey85")+
-  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey85")+
-  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey85")+
-  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= SHUFFLE))+
-  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= SHUFFLE))+
-  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= SHUFFLE))+
-  scale_y_continuous("metapopulation size (metapopulation model predictions)",limits=c(80,420))+
-  scale_x_continuous("metapopulation size (patch model predictions)",limits=c(80,420)) +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
-  theme(legend.title=element_blank())
-  
-```
-
-**Figure S04.1** -- Something somethingTHIS IS A DRAFT FIGURE, LOTS OF THINGS TO FINE TUNE (legend of size of points for the average to redo properly)
-
 ```{r}
 M_tab_length <- M_data %>% 
   select(LENGTH,METAPOP_ID,
@@ -295,52 +273,77 @@ P_tab_M_length <- P_tab_plots %>%
   mean_hdi(.value_P_trt) %>% 
   rename(.lower_P_trt=".lower",.upper_P_trt=".upper")
 ###double check the tabs above
+```
 
-left_join(M_tab,P_tab_M) %>% 
-  left_join(M_tab_length) %>% 
-  left_join(P_tab_M_length) %>% 
+```{r fig.width=8, fig.height=4}
+pA <- left_join(M_tab,P_tab_M) %>% 
+  left_join(M_tab_shuffle) %>% 
+  left_join(P_tab_M_shuffle) %>% 
   ggplot()+
-  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey95")+
-  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey95")+
-  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey80")+
-  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= LENGTH))+
-  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= LENGTH))+
-  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= LENGTH))+
-  geom_abline(intercept = 0,slope=1)+
-  scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
-  scale_x_continuous("predicted mean metapopulation size based on patch-level model") +
+  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey85")+
+  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey85")+
+  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey85")+
+  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= SHUFFLE))+
+  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= SHUFFLE))+
+  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= SHUFFLE))+
+  geom_abline(intercept = 0,slope=1,lty=2)+
+  scale_y_continuous("metapopulation size (metapop. model)",limits=c(80,420))+
+  scale_x_continuous("metapopulation size (patch model)",limits=c(80,420)) +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
   theme(legend.title=element_blank())
   
-```
-
-```{r}
-left_join(M_tab,M_tab_obs) %>% 
+pB <- left_join(M_tab,P_tab_M) %>% 
+  left_join(M_tab_length) %>% 
+  left_join(P_tab_M_length) %>% 
   ggplot()+
-  geom_segment(aes(x=METAPOP_MEAN,xend=METAPOP_MEAN,y=.lower_M,yend=.upper_M),col="grey95")+
-  geom_point(aes(x=METAPOP_MEAN,y=.value_M),size=2,col="grey80")+
-  geom_abline(intercept = 0,slope=1)+
-  scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
-  scale_x_continuous("observed") +
+  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey85")+
+  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey85")+
+  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey85")+
+  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= LENGTH))+
+  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= LENGTH))+
+  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= LENGTH))+
+  geom_abline(intercept = 0,slope=1, lty=2)+
+  scale_y_continuous("metapopulation size (metapop. model)",limits=c(80,420))+
+  scale_x_continuous("metapopulation size (patch model)",limits=c(80,420)) +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
   theme(legend.title=element_blank())
+
+(pA | pB) & theme(legend.position="bottom") & plot_annotation(tag_levels = "A")
 ```
 
+**Figure S04.1** -- Comparisons between mean metapopulation size predictions (with 95% intervals) from the metapopulation-level model vs. the patch-level model (multiplying mean predictions by the number of patches, implicitly assuming patches are temporally independent). Treatment-level predictions (A: randomization treatment, B: metapopulation connectedness treatment) are added over replicate-level predictions (in grey).  Dotted line: $y = x$.
 
-```{r}
-left_join(P_tab_M,M_tab_obs) %>% 
+
+```{r fig.width=8, fig.height=4}
+pA <- left_join(M_tab,M_tab_obs) %>% 
   ggplot()+
-  geom_segment(aes(x=METAPOP_MEAN,xend=METAPOP_MEAN,y=.lower_P,yend=.upper_P),col="grey95")+
-  geom_point(aes(x=METAPOP_MEAN,y=.value_P),size=2,col="grey80")+
-  geom_abline(intercept = 0,slope=1)+
-  scale_y_continuous("predicted mean metapopulation size based on patch-level model")+
-  scale_x_continuous("observed") +
+  geom_segment(aes(x=METAPOP_MEAN,xend=METAPOP_MEAN,y=.lower_M,yend=.upper_M),col="grey85")+
+  geom_point(aes(x=METAPOP_MEAN,y=.value_M),size=2,col="grey85")+
+  geom_abline(intercept = 0,slope=1,lty=2)+
+  scale_y_continuous("metapopulation size (metapop. model)",limits=c(80,420))+
+  scale_x_continuous("observed mean metapopulation size",limits=c(80,420)) +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
   theme(legend.title=element_blank())
+
+pB <- left_join(P_tab_M,M_tab_obs) %>% 
+  ggplot()+
+  geom_segment(aes(x=METAPOP_MEAN,xend=METAPOP_MEAN,y=.lower_P,yend=.upper_P),col="grey85")+
+  geom_point(aes(x=METAPOP_MEAN,y=.value_P),size=2,col="grey85")+
+  geom_abline(intercept = 0,slope=1,lty=2)+
+  scale_y_continuous("metapopulation size (patch model)",limits=c(80,420))+
+  scale_x_continuous("observed mean metapopulation size",limits=c(80,420)) +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
+  theme(legend.title=element_blank())
+
+(pA | pB) & plot_annotation(tag_levels = "A")
 ```
+
+**Figure S04.2** -- Comparisons between observed mean metapopulation sizes and mean metapopulation size predictions (with 95% intervals) from the metapopulation-level model (A) or the patch-level model (B: multiplying mean predictions by the number of patches, implicitly assuming patches are temporally independent).  Dotted line: $y = x$.
+
 
 # S05 -- TO COMPLETE -- something about the simulation
 
