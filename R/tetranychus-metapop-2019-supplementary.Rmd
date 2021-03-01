@@ -253,20 +253,23 @@ P_tab_M_shuffle <- P_tab_plots %>%
   mean_hdi(.value_P_trt) %>% 
   rename(.lower_P_trt=".lower",.upper_P_trt=".upper")
 ###double check the tabs above
+```
 
+
+```{r fig.width=5.5, fig.height=4.5}
 left_join(M_tab,P_tab_M) %>% 
   left_join(M_tab_shuffle) %>% 
   left_join(P_tab_M_shuffle) %>% 
   ggplot()+
-  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey95")+
-  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey95")+
-  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey80")+
+  geom_abline(intercept = 0,slope=1,lty=2)+
+  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey85")+
+  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey85")+
+  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey85")+
   geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= SHUFFLE))+
   geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= SHUFFLE))+
   geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= SHUFFLE))+
-  geom_abline(intercept = 0,slope=1)+
-  scale_y_continuous("predicted mean metapopulation size based on metapopulation-level model")+
-  scale_x_continuous("predicted mean metapopulation size based on patch-level model") +
+  scale_y_continuous("metapopulation size (metapopulation model predictions)",limits=c(80,420))+
+  scale_x_continuous("metapopulation size (patch model predictions)",limits=c(80,420)) +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
   theme(legend.title=element_blank())
@@ -338,6 +341,7 @@ left_join(P_tab_M,M_tab_obs) %>%
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
   theme(legend.title=element_blank())
 ```
+
 # S05 -- TO COMPLETE -- something about the simulation
 
 
