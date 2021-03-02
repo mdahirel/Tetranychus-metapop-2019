@@ -302,7 +302,7 @@ M_formula  <- bf(
 
 ## 2C - Implementation - choosing priors
 
-We then select our priors. Because the patch-level model is complex, with lots of moving parts relative to the amount of data, we can't just use "usual" weakly informative priors; we have to think a little harder to avoid a prior pushing the model towards blatantly wrong extreme values. Luckily we have independent prior data in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015], so we're going to be able to rely on explicit prior knowledge
+We then select our priors. Because the patch-level model is complex, with lots of moving parts relative to the amount of data, we can't just use "usual" weakly informative priors; we have to think a little harder to avoid a prior pushing the model towards blatantly wrong extreme values. Luckily we have independent prior data from the same species/host plant system in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016; -@deroissartSpatialSpatiotemporalVariation2015], so we're going to be able to rely on explicit prior knowledge
 
 ```{r import_prior_data}
 prior_data <- read_csv(here("data","prior_data.csv"))
@@ -310,7 +310,7 @@ prior_data <- read_csv(here("data","prior_data.csv"))
 
 (This is a copy of the relevant columns in the Dryad data in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016], see there and README for details).
 
-Densities are given in mites per cm^2. We're going to use the adult female column `AvgFem`:
+Densities there are given in mites per cm^2 (our own patches are 25cm^2). We're going to use the adult female column `AvgFem`:
 
 ```{r filter_prior_data}
 prior_data <- prior_data %>% 
@@ -335,7 +335,7 @@ OK, how does this help set us reasonable priors?
 
 First, there are five types of parameters:
 
-- intercepts for the fixed effect latent mean
+- intercept for the fixed effect latent mean
 - random effect standard deviation
 - intercepts for the shape parameter (Metapop-model only)
 - fixed effects coefficients
