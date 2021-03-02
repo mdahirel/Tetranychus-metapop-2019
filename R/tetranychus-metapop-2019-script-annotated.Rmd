@@ -203,6 +203,25 @@ beta2_wang_loreau <- function(varcorr, means) {
   sqrt_w_bar <- sum(sqrt(diag(varcorr))) / length(means)
   return((sqrt_w_bar^2 - (sum(varcorr)) / (length(means)^2)) / mean(means)^2)
 }
+
+uneven_wang_loreau <- function(varcorr, means) {
+  varcorr= as.matrix(varcorr) #ensure there is no problems with diag(varcorr) if varcorr is a 1*1 matrix
+  #Basic error checks
+    if(!is.vector(means)) stop("Error(not a vector): means should be a vector of numeric values (abundances)")
+    if(!is.numeric(means)) stop("Error(not numeric): means should be a vector of numeric values (abundances)")
+    if(length(dim(varcorr))>2) stop("Error: varcorr matrix should be a 2-dimensional matrix")
+    if(dim(varcorr)[1] != dim(varcorr)[2]) stop("Error: varcorr matrix should be a square matrix")
+    if(dim(varcorr)[1] != length(means)) stop("Error: varcorr matrix and means should have same dimensions")
+  
+  sqrt_w_bar <- sum(sqrt(diag(varcorr))) / length(means)
+  
+  a <- (means - mean(means))^2
+  b <- (sqrt(diag(varcorr)) - sqrt_w_bar)^2
+  c <- (length(means) * mean(means)^2)
+  return(sum(a + b)/c)
+}
+
+
 ```
 
 # Part 2 - Fitting the model
@@ -587,9 +606,10 @@ P_tab <- P_tab %>%
   )) %>% 
   mutate( 
     P_alpha = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% alpha_wang_loreau(varcorr=., means = .y)),
-    P_gamma = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = .y))
+    P_gamma = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% gamma_wang_loreau(varcorr=., means = .y)),
+    P_uneven = map2(.x = P_vcv_time_obs, .y = P_pred, .f = ~.x %>% uneven_wang_loreau(varcorr=., means = .y))
   ) %>% 
-  unnest(cols=c(P_alpha,P_gamma)) %>% 
+  unnest(cols=c(P_alpha,P_gamma,P_uneven)) %>% 
   mutate(
     P_beta1 = P_alpha / P_gamma, P_phi = P_gamma/P_alpha, P_beta2 = P_alpha - P_gamma
   )
