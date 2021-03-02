@@ -221,7 +221,7 @@ M_tab_obs <- M_data %>%
   group_by(METAPOP_ID) %>% 
   summarise(METAPOP_MEAN=mean(METAPOPSUM))
 
-M_tab <- M_data %>% 
+M_tab <- M_data %>% filter(WEEK==1) %>%
   select(LENGTH,SHUFFLE,METAPOP_ID,
          is.landscape8,is.landscape16,is.randomized) %>% 
   add_fitted_draws(M_mod) %>% 
@@ -229,7 +229,7 @@ M_tab <- M_data %>%
   mean_hdi(.value) %>% 
   rename(.lower_M=".lower",.upper_M=".upper",.value_M=".value")
 
-M_tab_shuffle <- M_data %>% 
+M_tab_shuffle <- M_data %>% filter(WEEK==1) %>%
   select(SHUFFLE,METAPOP_ID,
          is.landscape8,is.landscape16,is.randomized) %>% 
   add_fitted_draws(M_mod,re_formula = NA) %>% 
@@ -257,7 +257,7 @@ P_tab_M_shuffle <- P_tab_plots %>%
 
 
 ```{r}
-M_tab_length <- M_data %>% 
+M_tab_length <- M_data %>% filter(WEEK==1) %>%
   select(LENGTH,METAPOP_ID,
          is.landscape8,is.landscape16,is.randomized) %>% 
   add_fitted_draws(M_mod,re_formula = NA) %>% 
