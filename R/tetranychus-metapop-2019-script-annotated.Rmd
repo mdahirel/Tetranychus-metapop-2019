@@ -864,7 +864,7 @@ p8<-P_tab_plots %>%
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
                orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
   scale_fill_manual(values=paletteLENGTH)+
-  scale_x_continuous("spatial unevenness")+
+  scale_x_continuous("mean spatial unevenness")+
   scale_y_discrete("")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
