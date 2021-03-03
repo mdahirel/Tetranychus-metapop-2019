@@ -26,7 +26,7 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
 
 This script analyses data resulting from the study of experimental metapopulations of spider mites *Tetranychus urticae*. Each replicate metapopulation was composed of 9 patches connected by bridges; the bridge length varied between replicates. Abundances of adult females were tracked weekly in each patch of each metapopulation. We are interested in the effect of bridge length and randomization treatment (see text) on mean patch-level population size, mean metapopulation size and various variability metrics. 
 
-This script relies heavily on de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] (for converting latent means and variance-covariance matrices to data/observed scale) and Wang and Loreau [-@wangEcosystemStabilitySpace2014] (for the principle and formulas of $\alpha$, $\beta$, $\gamma$ variability in metapopulations). Everything below assumes the reader has read these two papers.
+This script relies heavily on de @villemereuilGeneralMethodsEvolutionary2016 (for converting latent means and variance-covariance matrices to data/observed scale) and @wangEcosystemStabilitySpace2014 (for the principle and formulas of $\alpha$, $\beta$, $\gamma$ variability in metapopulations). Everything below assumes the reader has read these two papers.
 
 # Part 1 : Preparation
 
@@ -241,7 +241,7 @@ $$
 N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}),
 $$
 $$
-\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j,x,y}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},
+\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j=1}^J{\beta_{j}x_{i,j,x,y}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},
 $$
 $$
 \alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha}),
@@ -279,7 +279,7 @@ $$
 M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}),
 $$
 $$
-\log(\lambda_{[i]}) = \beta_{0} + \sum_{j}{\beta_{j}x_{i,j}} + \gamma_{[i]},
+\log(\lambda_{[i]}) = \beta_{0} + \sum_{j=1}^J{\beta_{j}x_{i,j}} + \gamma_{[i]},
 $$
 $$
 \log(\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},
