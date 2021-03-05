@@ -671,10 +671,8 @@ p1<-P_tab_plots %>%
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=SHUFFLE,alpha=(1/(P_se^2/P_mean^2))),
               col="grey60",
                      height=0.2,size=3) +
-  #geom_errorbarh(data=P_obsmeans %>% group_by(SHUFFLE) %>% summarise(mean=mean(P_mean)),
-  #               aes(y=SHUFFLE,xmin=mean,xmax=mean),height=.8,size=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("Randomization?")+
   cowplot::theme_half_open(11) +
@@ -688,10 +686,8 @@ p2 <- P_tab_plots %>%
   ggplot()+
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=LENGTH,alpha=(1/(P_se^2/P_mean^2))),col="grey60",
                      height=0.2,size=3) +
-  #  geom_errorbarh(data=P_obsmeans %>% group_by(LENGTH) %>% summarise(mean=mean(P_mean)),
-  #               aes(y=LENGTH,xmin=mean,xmax=mean),height=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("")+
   scale_y_discrete("Metapopulation connectedness")+
@@ -715,10 +711,8 @@ p3 <- P_tab_plots %>%
   ggplot()+
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,alpha=(1/(P_se^2/P_mean^2))),
               col="grey60", height=0.2,size=3) +
-  #  geom_errorbarh(data=P_obsmeans %>% group_by(local_connectedness) %>% summarise(mean=mean(P_mean)),
-  #               aes(y=local_connectedness,xmin=mean,xmax=mean),height=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLOCAL)+
   scale_x_continuous("mean patch population size (adult females)")+
   scale_y_discrete("Local connectedness")+
@@ -768,7 +762,7 @@ p1<-P_tab_plots %>%
   summarise(mean = mean(P_alpha)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("Randomization?")+
   cowplot::theme_half_open(11) +
@@ -781,7 +775,7 @@ p2<-P_tab_plots %>%
   summarise(mean = mean(P_alpha))  %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous(expression(paste("mean ", alpha, " variability")))+
   scale_y_discrete("Metapopulation connectedness")+
@@ -795,7 +789,7 @@ p3<-P_tab_plots %>%
   summarise(mean = mean(P_phi)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("")+
   cowplot::theme_half_open(11) +
@@ -808,7 +802,7 @@ p4<-P_tab_plots %>%
   summarise(mean = mean(P_phi))  %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous(expression(paste("mean spatial synchrony (", phi1, " = ", 1/beta,")")))+  #phi1 to get the cursive
   scale_y_discrete("")+
@@ -822,7 +816,7 @@ p5<-P_tab_plots %>%
   summarise(mean = mean(P_gamma)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("")+
   cowplot::theme_half_open(11) +
@@ -835,7 +829,7 @@ p6<-P_tab_plots %>%
   summarise(mean = mean(P_gamma))  %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous(expression(paste("mean ", gamma, " variability")))+
   scale_y_discrete("")+
@@ -849,7 +843,7 @@ p7<-P_tab_plots %>%
   summarise(mean = mean(P_uneven)) %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("")+
   cowplot::theme_half_open(11) +
@@ -862,7 +856,7 @@ p8<-P_tab_plots %>%
   summarise(mean = mean(P_uneven))  %>% 
   ggplot()+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("mean spatial unevenness")+
   scale_y_discrete("")+
@@ -940,10 +934,8 @@ p1<-P_tab_plots %>%
   ggplot()+
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=LENGTH,alpha=(1/(P_se^2/P_mean^2))),
               col="grey60",height=0.2,size=3) +
-  #geom_errorbarh(data=P_obsmeans %>% group_by(SHUFFLE,LENGTH) %>% summarise(mean=mean(P_mean)),
-  #               aes(y=LENGTH,xmin=mean,xmax=mean),height=.8,size=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("")+
   scale_y_discrete("Metapopulation connectedness")+
@@ -968,10 +960,8 @@ p2 <- P_tab_plots %>%
   ggplot()+
   geom_jitter(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,alpha=(1/(P_se^2/P_mean^2))),
               col="grey60",height=0.2,size=3) +
-  #geom_errorbarh(data=P_obsmeans %>% group_by(SHUFFLE,local_connectedness) %>% summarise(mean=mean(P_mean)),
-  #               aes(y=local_connectedness,xmin=mean,xmax=mean),height=.8,size=1,col="grey60")+
   stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5)+
+               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLOCAL)+
   scale_x_continuous("mean patch population size (adult females)")+
   scale_y_discrete("Local connectedness")+

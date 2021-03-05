@@ -87,7 +87,7 @@ tibble(LENGTH=4:32,Nstart=10) %>%
   mutate(length_centered=LENGTH-mean(prelim_data$LENGTH)) %>% 
   add_fitted_draws(mod_bridge) %>% 
   ggplot()+
-  stat_lineribbon(aes(LENGTH,.value/Nstart), fill="grey",.width=c(0.95))+
+  stat_lineribbon(aes(LENGTH,.value/Nstart), fill="grey",.width=c(0.95),point_interval=mean_hdi)+
   geom_point(data=prelim_data,aes(LENGTH,Ndead_24h/Nstart),pch= 21,fill="black",size=3) + 
   scale_x_continuous("bridge length (cm)")+
   scale_y_continuous("proportion dead after 24h") +
@@ -392,7 +392,7 @@ Each simulation, after initialization, runs through 500 time steps. Each time st
 At the start of a simulation, a metapopulation is initialized with parameters that will stay fixed for the duration of that simulation. The only parameter that varies among simulations is the dispersal mortality. Furthermore, the model initializes a population with half the metapopulation carrying capacity. This is half of nine times the carrying capacity of a patch or 450 ($K$ = 100, **Table S05.1**) individuals that are randomly allocated to one of the nine patches.
 
 ### Input
-Each simulation receives a dispersal mortality (m) parameter that ranges from 0.05 to 0.85 in steps of 0.05 (**Table S05.1**). We choose not to simulate dispersal mortalities above 0.85 since that would simulate something closer to an unconnected network with a high mortality that are prone to population crashes. We replicate simulations of every input value twenty times.
+Each simulation receives a dispersal mortality ($m$) parameter that ranges from 0.05 to 0.85 in steps of 0.05 (**Table S05.1**). We choose not to simulate dispersal mortalities above 0.85 since that would simulate something closer to an unconnected network with a high mortality that are prone to population crashes. We replicate simulations of every input value twenty times. <!--check the number of replicates, and check mismatch between text saying max m = 0.85 and figure saying max m = 0.8-->
 
 ### Submodels
 
