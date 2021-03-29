@@ -33,24 +33,30 @@ This script relies heavily on de @villemereuilGeneralMethodsEvolutionary2016 (fo
 ## 1A - packages
 
 First, we’re going to load all the packages we need. This includes the `tidyverse` packages [@wickhamWelcomeTidyverse2019], for data wrangling at the beginning and summarising/plotting at the end, as well as the packages needed to do Bayesian inference and post-processing of Bayesian model results.
-This script uses the Stan language [@carpenterStanProbabilisticProgramming2017] for model fitting (we can use the `rstan` or the `cmdstanr` implementation; see https://mc-stan.org/ for how to install them). The `brms` package [@burknerBrmsPackageBayesian2017] allows you to write a wide range of Stan models using R syntax; it then does the “translation” before fitting. The `QGglmm` package by de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] is useful to convert latent scale variance-covariance matrices from a GLMM output to observed scale matrices, needed for our analysis.
+This script uses the Stan language [@carpenterStanProbabilisticProgramming2017] for model fitting (we can use the `rstan` or the `cmdstanr` implementation; see https://mc-stan.org/ for how to install them). The `brms` package [@burknerBrmsPackageBayesian2017] allows you to write a wide range of Stan models using R syntax; it then does the “translation” itself before fitting. The `QGglmm` package by de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] is useful to convert latent scale variance-covariance matrices from a GLMM output to observed scale matrices, needed for our analysis.
 
 ```{r packages-loading}
 #library(rstan) ## Stan backend
-library(cmdstanr) ## Stan backend (another)
-library(brms) ## the interface we are using
+
+library(cmdstanr)    # [github::stan-dev/cmdstanr] v0.3.0 
+## Stan backend (another)
+
+library(brms)        # CRAN v2.14.4 
+## the interface we are using
 
 
-library(tidyverse)
-library(bayesplot)
-library(tidybayes)
-library(matrixStats)
+library(tidyverse)   # CRAN v1.3.0
+library(bayesplot)   # CRAN v1.8.0
+library(tidybayes)   # CRAN v2.3.1
+library(matrixStats) # CRAN v0.58.0
 
-library(QGglmm) ## this package is needed to help convert variance-covariance matrices from latent to data scale
+library(QGglmm)      # CRAN v0.7.4 
+## this package is needed to help convert variance-covariance matrices from latent to data scale
 
-library(patchwork) #plotting
+library(patchwork)   # [github::thomasp85/patchwork] v1.1.0.9000 
+#plotting
 
-library(here)
+library(here)        # CRAN v1.0.1
 
 ## some useful default settings
 # rstan_options(auto_write = TRUE) #for rstan
@@ -62,7 +68,7 @@ N_iter <- N_warmup + 2000  ## recommended for publication-level quality: 2000 it
 
 ```
 
-**Note:** The finished model object will likely be large (at least several 100s Mb) and take some time to fit (a few hours to half a day on the few laptops it has been tested on). If this causes problems, we invite you to try a model with a much smaller `N_warmup` and number of iterations post-warmup (see comments in code chunk above). It should be close enough to convergence, despite warnings, to allow you to get a general idea of the results.
+**Note:** The finished model object for the patch level will likely be large (several 100s of MB, depending on `N_iter`) and take some time to fit (a few hours to half a day on the few laptops it has been tested on). If this causes problems, we invite you to try a model with a much smaller `N_warmup` and number of iterations post-warmup `N_iter` (see comments in code chunk above). It should be close enough to convergence, despite warnings, to allow you to get a general idea of the results.
 
 
 ## 1B – data loading and wrangling
@@ -76,14 +82,14 @@ The variables in `raw_data` are as follow:
 - `METAPOP_ID`: unique ID for each replicate metapopulation
 - `LENGTH`: length of bridges between patches in the metapopulation (4, 8, or 16 cm)
 - `SHUFFLE`: within-metapopulation reshuffling treatment. NO: control, no reshuffling, R: reshuffling
-- `REPLICATE`: replicate metapopulation number within a treatment set. The `METAPOP_ID` string corresponds to "`LENGTH` _ `SHUFFLE` _ `REPLICATE`"
-- `PATCH`: Patch location in the 3 by 3 metapopulation (written as "row.column")
+- `REPLICATE`: replicate metapopulation number within a treatment set. The `METAPOP_ID` string corresponds to "`LENGTH`_`SHUFFLE`_`REPLICATE`"
+- `PATCH`: Patch location in the 3 by 3 metapopulation (written as "row.column"). Importantly for the analysis, note that saying which axis of a replicate is the row and which is the column is 100% arbitrary
 - `WEEK`: weeks of data collection (first week coded as 1)
 - `AFEMA`: number of adult females counted on patch, our measure of abundance
 
 In the raw dataset, data are stored in the long format (one row = one patch observation at one moment of time). We're going to temporarily switch data to the wide format (one row = snapshot of an entire replicate at one moment in time, with one column by patch), so that it's easier to do a few things:
 
-- a few replicates have NAs on *some* patches on one week or so, for some reason (transcription error?). To be safe, let's remove the entire week for the metapop in question, even if most patches were recorded.
+- a few replicates have NAs on *some* patches on one week or so, for some reason (transcription error?). To be safe, let's remove the entire week for the metapopulation in question, even if most patches were recorded.
 
 - we're going to need a variable representing the total metapopulation size for each replicate and week, and it's just easier to do it from the wide table
 
@@ -92,9 +98,7 @@ In the raw dataset, data are stored in the long format (one row = one patch obse
 data_wide <- raw_data %>% 
   mutate(PATCH= paste("P", PATCH, sep = "")) %>% 
   mutate(PATCH= str_remove(PATCH, "[.]")) %>% 
-### the two lines above make patches names (a) easier to use as column names (letter as 1st character)
-### and consistent with brms standards on response variable names (best to avoid dots and underscore,
-### as some functions will remove them for output names and then matching input and output becomes slightly harder)
+### the two lines above make patches names easier to use as column names (letter as 1st character)
   mutate(LENGTH = fct_recode(factor(LENGTH),
                              `16 cm (low)` = "16",
                              `8 cm (medium)` = "8",
@@ -147,7 +151,7 @@ M_data <- M_data %>%
 
 ## 1-C Functions for $\alpha$, $\beta$, $\gamma$ variability
 
-One of the aims of this script is to estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for among metapopulation-variability. The short functions below calculate these metrics, given as input a temporal variance-covariance matrix, and a vector of mean patch population sizes (both must be numeric and contain the same number of patches, of course)(and also both should be on the *observed/data* scale in the case of a GLMM).
+One of the aims of this script is to estimate the $\alpha$, $\beta$ and $\gamma$ variability metrics proposed by Wang and Loreau [-@wangEcosystemStabilitySpace2014], while accounting for both uncertainty and among-metapopulation variation. The short functions below calculate these metrics, given as input a temporal variance-covariance matrix, and a vector of mean patch population sizes (both must be numeric and contain the same number of patches, of course)(and also both should be on the *observed/data* scale in the case of a GLMM).
 
 ```{r wang-loreau}
 
