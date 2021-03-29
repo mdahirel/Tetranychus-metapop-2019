@@ -160,6 +160,7 @@ $$
 $$
 \eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).
 $$  
+
 Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similarly, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape. We fit the model for the overdispersion parameter on its log-transformed inverse: the inverse transformation (as suggested in the Stan language wiki: https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations) is used to avoid giving too much prior weight to high overdispersion, the log transformation to keep $\phi$ estimates > 0.
 
 ## Rationale behind priors

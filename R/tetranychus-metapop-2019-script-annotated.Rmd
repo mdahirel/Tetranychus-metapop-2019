@@ -234,18 +234,16 @@ uneven_wang_loreau <- function(varcorr, means) {
 
 ### Patch-level model
 
-We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment, local connectedness and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
+We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment, local connectedness _ both included as fixed effects _ and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
 You can see below that we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches form the same replicate can be correlated. We will average everything downstream as needed, but given the non-linearities everywhere in a GLMM, and the fact patch names are arbitrary (we could have rotated metapopulations without changing anything meaningful), it is probably best for the variabilities to calculate everything replicate by replicate first and only average later. It is important to note that the presence of the temporal matrices it means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so no further overdispersion to worry about.
 
-Intuition behind this formulation (latent residuals via OLRE + specified covariance structure) is the same as in this comment by Paul Bürkner (https://github.com/paul-buerkner/brms/issues/600#issuecomment-511677732) 
-
-The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
+Intuition behind this formulation (latent residuals via OLRE + specified covariance structure) is the same as in this comment by Paul Bürkner (https://github.com/paul-buerkner/brms/issues/600#issuecomment-511677732) The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
 
 $$
 N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}),
 $$
 $$
-\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j=1}^J{\beta_{j}x_{i,j,x,y}} + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},
+\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j=1}^J({\beta_{j} \times x_{j[i,x,y]}}) + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},
 $$
 $$
 \alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha}),
@@ -258,7 +256,7 @@ $$
 \sim 
 \textrm{MVNormal}
 \begin{pmatrix}
-\begin{bmatrix} 0 \\ ... \\ 0  \end{bmatrix} ,
+\begin{bmatrix} 0 \\ ... \\ 0  \end{bmatrix},
 \boldsymbol{\Omega}_{[i]}
 \end{pmatrix},
 $$
@@ -270,23 +268,25 @@ $$
 \boldsymbol{R}_{[i]}
 \begin{bmatrix}
 \sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
-\end{bmatrix}
+\end{bmatrix},
 $$
 
-where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following schielzethSimpleMeansImprove2010, this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
+where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following @schielzethSimpleMeansImprove2010, this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
 
-### Meta-population model
+We will also fit the "equivalent" negative binomial model (see 2E), as a check. Intuitively, it does not allow within-patch temporal variation to be correlated across patches, so should lead to inadequate predictions of patch-level variation.
 
-Similarly, we can write a (much simpler) model for the total metapopulation size (total number of adult females) $M$. Because there are no correlations to worry about, we can use a negative binomial model here to model the within-replicate temporal variation:
+## Meta-population model
+
+Similarly, we can write a (much simpler) model for the total metapopulation size (total number of adult females) $M$. Because there are no internal correlations to worry about here, we can use a negative binomial model here to model the within-replicate temporal variation:
 
 $$
 M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}),
 $$
 $$
-\log(\lambda_{[i]}) = \beta_{0} + \sum_{j=1}^J{\beta_{j}x_{i,j}} + \gamma_{[i]},
+\log(\lambda_{[i]}) = \beta_{0} + \sum_{j=1}^J({\beta_{j} \times x_{j[i]}}) + \gamma_{[i]},
 $$
 $$
-\log(\phi_{[i]}) = \alpha_{0} + \sum_{j}{\alpha_{j}x_{i,j}} + \eta_{[i]},
+\log(1/\phi_{[i]}) = \alpha_{0} + \sum_{j=1}^J({\alpha_{j} \times x_{j[i]}}) + \eta_{[i]},
 $$
 $$
 \gamma_{[i]} \sim \mathrm{Normal}(0, \sigma_{\gamma}),
@@ -295,7 +295,7 @@ $$
 \eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).
 $$  
 
-Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similarly, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape.
+Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similarly, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape. We fit the model for the overdispersion parameter on its log-transformed inverse: the inverse transformation (as suggested in the Stan language wiki: https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations) is used to avoid giving too much prior weight to high overdispersion, the log transformation to keep $\phi$ estimates > 0.
 
 
 ## 2B - Implementation - formulas
@@ -304,7 +304,7 @@ Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for t
 
 ```{r P_formulas}
 P_formula <- bf(
-  AFEMA~(is.local5 + is.local3 + is.landscape8 + is.landscape16)*is.randomized+
+  AFEMA~(is.local5 + is.local3 + is.landscape8 + is.landscape16)*is.randomized+ # we use the dummy centred variables
     (1|METAPOP_ID/PATCH)+(0+PATCH|gr(METAPOP_ID:WEEK,by=METAPOP_ID)),
   family=poisson)
 ```
@@ -316,10 +316,10 @@ M_formula  <- bf(
   METAPOPSUM~(is.landscape8 + is.landscape16)*is.randomized+(1|METAPOP_ID),
   nlf(shape~1/exp(loginvshape)), 
   ##we fit the model on the inverse of shape 
-  ##(avoid assuming a priori very large overdispersions are more likely) 
+  ##(avoid assuming a priori that very large overdispersions _ low values of shape _ are more likely) 
   ## and we need a log transformation to keep things >0
   loginvshape~(is.landscape8 + is.landscape16)*is.randomized+(1|METAPOP_ID),
-  family=negbinomial(link_shape = "identity"))
+  family=negbinomial(link_shape = "identity")) #the transformation link is already "included" in the code just above
 
 ```
 
@@ -333,14 +333,14 @@ prior_data <- read_csv(here("data","prior_data.csv"))
 
 (This is a copy of the relevant columns in the Dryad data in De Roissart *et al.* [-@deroissartDataSpatialSpatiotemporal2016], see there and README for details).
 
-Densities there are given in mites per cm^2 (our own patches are 25cm^2). We're going to use the adult female column `AvgFem`:
+Densities there are given in mites per cm^2^ (our own patches are 25cm^2). We're going to use the adult female column `AvgFem`:
 
 ```{r filter_prior_data}
 prior_data <- prior_data %>% 
   group_by(MP,P,Treatment,Date) %>% 
   mutate(total=AvgFem+AvgEggs+AvgMal+AvgJuv) %>% ## all the mites on the patch at time t
-  group_by(MP,P,Treatment) %>%  ##metapop plus patch ID uniquely define a patch
-  mutate(was_populated = mean(total)>0) %>% ## we exclude all patches that were NEVER populated
+  group_by(MP,P,Treatment) %>%  ## metapop plus patch ID uniquely define a patch
+  mutate(was_populated = mean(total)>0) %>% ## to exclude all patches that were NEVER populated
   ungroup() %>% 
   filter(was_populated==TRUE)
 ```
@@ -348,10 +348,10 @@ prior_data <- prior_data %>%
 Now we're going to use these data to get very very rough prior info
 ```{r distri_prior_data}
 
-log(median(prior_data$AvgFem*25))   #the \mu of a lognormal with same observed median as prior data
-log(median(prior_data$AvgFem*25*9))
+log(median(prior_data$AvgFem*25))   # the \mu of a lognormal with same observed median as prior data, multiplied by patch area
+log(median(prior_data$AvgFem*25*9)) # same, multiplied by total metapopulation area
 
-log(1 + var(prior_data$AvgFem)/mean(prior_data$AvgFem)^2) #the \sigma^2 of a lognormal with same observed mean and variance
+log(1 + var(prior_data$AvgFem)/mean(prior_data$AvgFem)^2) # the \sigma^2 of a lognormal with same observed mean and variance
 ```
 
 OK, how does this help set us reasonable priors?
@@ -364,7 +364,7 @@ First, there are five types of parameters:
 - fixed effects coefficients
 - correlation matrix
 
-For the last three, we're just going to use general purpose weakly informative priors as in [@mcelreathStatisticalRethinkingBayesian2020]. But we're going to need better for the other two. A good but broad prior for the fixed effect latent mean would be "any value within the distribution of observed prior values" (so Normal(3, 1) would work for the patch-level, Normal(5,1) for the metapop).
+For the last three, we're just going to use general purpose weakly informative priors as in [@mcelreathStatisticalRethinkingBayesian2020]. But we're going to need better for the other two. A good but broad prior for the fixed effect latent mean would be "any value within the distribution of observed prior values" (so about Normal(3, 1) would work for the patch-level, about Normal(5,1) for the metapop).
 
 For the random effect SDs, one can use the total log-scale variance in prior data as a guide, so roughly 1. The sum of replicate level variance, patch-level variance and within-patch level variance should then be around 0.9-1. So the typical prior variance for each of the 3 components should be around 0.3, leading to prior SDs around 0.5-0.55 as a pretty typical value.
 
@@ -402,13 +402,14 @@ if(file.exists(here("R_output","P_mod.Rdata"))){
     {
 
 P_mod <- brm(formula=P_formula, prior=P_prior, data = P_data, 
-           iter=N_iter,warmup=N_warmup,chains=N_chains,
+           iter=N_iter, warmup=N_warmup, chains=N_chains,
            seed=42, control=list(adapt_delta=0.9,max_treedepth=15),
            backend="cmdstanr")
 save(list=c("P_mod"), file=here("R_output","P_mod.Rdata"))
 }
 ```
 
+(Note that it can take some time to finish.)
 
 ```{r M_model_fitting}
 if(file.exists(here("R_output","M_mod.Rdata"))){
@@ -432,7 +433,6 @@ save(list=c("M_mod"), file=here("R_output","M_mod.Rdata"))
 ## hist(rhat(mod));abline(v=1.01,col="red")
 ```
 
-Note that it can take some time to finish (around 2000-4000 iterations/h/core on my laptop).
 
 ```{r model_summary}
 summary(P_mod)  #look at Rhat and ESS both tail and bulk
@@ -481,8 +481,12 @@ P_mod2 <- brm(formula=P_formula2, prior=P_prior2, data = P_data,
              backend="cmdstanr")
 save(list=c("P_mod2"), file=here("R_output","P_mod_alt.Rdata"))
   }
+```
 
+
+```{r P_model_fitting_alternate_checks}
 ### let's build some residuals (ratio between observed values and predicted patch-level means)
+### only the posterior mean, though, not the full posterior
 P_data$alt_residuals=(P_data$AFEMA/fitted(P_mod2, re_formula=~(1|METAPOP_ID/PATCH))[,1])
 
 ggplot(P_data) +
@@ -490,16 +494,32 @@ ggplot(P_data) +
   facet_wrap(~METAPOP_ID)+geom_hline(yintercept=1,col="red")+
   coord_cartesian(ylim=c(0,4)) #cropping outlier dots to better see the boxes
 ## clear evidence of week-to-week metapopulation-wide fluctuations that are not accounted for by the negative binomial model
+## = patches do not vary independently
 
 ggplot(P_data) +
   geom_boxplot(aes(factor(PATCH),alt_residuals))+
   facet_wrap(~METAPOP_ID)+geom_hline(yintercept=1,col="red")+
   coord_cartesian(ylim=c(0,4))
-## while patch-to-patch variations are well accounted for, as one would expect from model structure
+## while patch-to-patch overall spatial variations are more-or-less* well accounted for, as one would expect from model structure
+## *if anything there is actually a bias toward the negbin model slightly overestimating true patch values, actually
 
 ```
 
 It's fairly easy to see that the negative binomial model for patches clearly misses the fact that the patches in a given metapopulation vary somewhat synchronously from week to week, and is thus incomplete.
+
+
+```{r waic_loo}
+waic(P_mod)
+waic(P_mod2)
+
+loo(P_mod)
+loo(P_mod2)
+```
+
+There are **a lot** of potential issues in my opinion with using WAIC or LOO-PSIS for comparing the two models:
+- first, there are many "bad" observations re:pareto_k, so we should probably use K-fold cross validation, but that would involve refitting the models K times, so add literal days of computing
+- second, given one model has observation-level random effects, so literally predicts every point, this feels a little weird and cheating (though this is penalized by greatly increasing the effective number of parameters p_waic or p_loo)
+But putting that aside it looks like, even after penalizing for the hundreds of underlying parameters added by the observation-level effect, the Poisson+OLRE model is indeed better than the negative binomial one
 
 # Part 3 - Obtaining key metrics from model output
 
