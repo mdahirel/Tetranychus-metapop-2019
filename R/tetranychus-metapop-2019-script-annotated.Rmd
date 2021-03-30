@@ -651,12 +651,13 @@ write_csv(x = P_tab_plots, file = here("R_output","P_tab.csv"))
 ```
 
 
+# Part 4- Figures and comparisons [BIG WORK IN PROGRESS]
 
-# Part 4- Figures [BIG WORK IN PROGRESS]
+## Data preparation
 
-Before doing the figures, we need to create color palettes that'll be used throughout:
+We re-import the final table of the previous step, and we update the `LENGTH`/metapopulation connectedness variable so that the order makes sense (increasing connectedness):
 
-```{r}
+```{r reimport}
 P_tab_plots <- read_csv(here("R_output","P_tab.csv")) %>% 
   mutate(
     LENGTH=fct_relevel(
@@ -665,18 +666,12 @@ P_tab_plots <- read_csv(here("R_output","P_tab.csv")) %>%
   )
 ```
 
+And we need to summarize the observed values to display them along the posterior when relevant:
 
-```{r figure-palettes}
-paletteLENGTH <- c("#D55E00", "#E69F00", "#F0E442") #for figures 2 to 4
-paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99") #for figure 5
-```
-
-And we need to summarise the observed values to display them along the posterior when relevant:
-
-```{r obs}
+```{r obs_summaries}
 P_obsmeans <- P_data %>%
   group_by(SHUFFLE,LENGTH,METAPOP_ID,PATCH, local_connectedness) %>%
-  summarise(P_mean=mean(AFEMA), P_se=plotrix::std.error(AFEMA)) %>% 
+  summarise(P_mean_obs=mean(AFEMA), P_var_obs=var(AFEMA)) %>% 
   ungroup()%>% 
   mutate(
     LENGTH=fct_relevel(
@@ -689,18 +684,31 @@ P_obsmeans <- P_data %>%
   )
 ```
 
-## patch level means
+Before doing the figures, we also need to create color palettes that'll be used throughout:
 
-```{r P_popsize}
+```{r figure_palettes}
+paletteLENGTH <- c("#D55E00", "#E69F00", "#F0E442") #for figures 2 to 4
+paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99") #for figure 5
+```
+
+## Patch-level means, additive effects
+
+### Figure 1
+
+We average the replicate-specific predictions across treatments, then we plot these posteriors along with the corresponding observed means. The observed means are plotted so that the less precise estimates (higher mean-standardised variance) are more transparent. (three subplots, one per treatment and connectedness variable):
+
+```{r fig1}
 p1<-P_tab_plots %>% 
   group_by(.iteration, SHUFFLE)  %>% 
   summarise(mean = mean(P_mean_all)) %>% 
   ggplot()+
-  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=SHUFFLE,alpha=(1/(P_se^2/P_mean^2))),
-              col="grey60",
-                     height=0.2,size=3) +
+  geom_jitter(data=P_obsmeans, 
+              aes(x=P_mean_obs,y=SHUFFLE,alpha=1/(P_var_obs^2/P_mean_obs^2)),
+              col="grey60", height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("Randomization?")+
   cowplot::theme_half_open(11) +
@@ -712,10 +720,13 @@ p2 <- P_tab_plots %>%
   group_by(.iteration, LENGTH) %>% 
   summarise(mean = mean(P_mean_all))  %>% 
   ggplot()+
-  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=LENGTH,alpha=(1/(P_se^2/P_mean^2))),col="grey60",
-                     height=0.2,size=3) +
+  geom_jitter(data=P_obsmeans, 
+              aes(x=P_mean_obs,y=LENGTH,alpha=1/(P_var_obs^2/P_mean_obs^2)),
+              col="grey60",height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("")+
   scale_y_discrete("Metapopulation connectedness")+
@@ -725,7 +736,8 @@ p2 <- P_tab_plots %>%
   coord_cartesian(xlim=c(5,50))
 
 p3 <- P_tab_plots %>% 
-  pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
+  pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),
+               names_to="local_connectedness",values_to="P_mean_local") %>% 
   mutate(local_connectedness = fct_recode(factor(local_connectedness),
                                           `center (high)` = "P_mean_center", 
                                           `side (medium)` = "P_mean_sides", 
@@ -737,12 +749,16 @@ p3 <- P_tab_plots %>%
   group_by(.iteration, local_connectedness) %>% 
   summarise(mean = mean(P_mean_local)) %>% 
   ggplot()+
-  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,alpha=(1/(P_se^2/P_mean^2))),
+  geom_jitter(data=P_obsmeans, 
+              aes(x=P_mean_obs,y=local_connectedness,
+                  alpha=1/(P_var_obs^2/P_mean_obs^2)),
               col="grey60", height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLOCAL)+
-  scale_x_continuous("mean patch population size (adult females)")+
+  scale_x_continuous("temporal mean of patch population size (adult females)")+
   scale_y_discrete("Local connectedness")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
@@ -753,8 +769,13 @@ p1/p2/p3
 
 ```
 
+### Pairwise comparisons
 
-```{r}
+We can then compare the posteriors for each subplot, to see how they are different. (Note: we do multiplicative comparisons _ ratios _ throughout since they seem more appropriate to count data then differences)
+
+```{r pairwise_comp_fig1}
+
+### pairwise for randomization
 P_tab_plots %>% 
   group_by(.iteration, SHUFFLE)  %>% 
   summarise(mean = mean(P_mean_all)) %>% 
@@ -762,6 +783,7 @@ P_tab_plots %>%
   compare_levels(variable=mean, by=SHUFFLE, fun=`/`) %>% 
   mean_hdi()
 
+### pairwise for metapopulation connectedness
 P_tab_plots %>% 
   group_by(.iteration, LENGTH)  %>% 
   summarise(mean = mean(P_mean_all)) %>% 
@@ -769,6 +791,7 @@ P_tab_plots %>%
   compare_levels(variable=mean, by=LENGTH, fun=`/`) %>% 
   mean_hdi()
 
+### pairwise for local connectedness
 P_tab_plots %>% 
   pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
   mutate(local_connectedness = fct_recode(factor(local_connectedness),
@@ -782,7 +805,9 @@ P_tab_plots %>%
   mean_hdi()
 ```
 
+## Metapopulation variability metrics
 
+### Figure 2
 
 ```{r P_vars}
 p1<-P_tab_plots %>% 
@@ -897,6 +922,8 @@ p8<-P_tab_plots %>%
 
 ```
 
+### Pairwise comparisons
+
 ```{r}
 P_tab_plots %>% 
   group_by(.iteration, SHUFFLE) %>%  
@@ -955,6 +982,10 @@ P_tab_plots %>%
   mean_hdi()
 ```
 
+## Patch-level means, interactive effects
+
+### Figure 3
+
 ```{r P_size_inter}
 p1<-P_tab_plots %>% 
   group_by(.iteration, LENGTH, SHUFFLE) %>% 
@@ -1002,7 +1033,9 @@ p2 <- P_tab_plots %>%
 p1/p2
 ```
 
+### Pairwise comparisons
 
+to do
 
 # References
 
