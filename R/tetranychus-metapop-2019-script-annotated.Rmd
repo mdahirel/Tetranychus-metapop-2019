@@ -733,11 +733,7 @@ fig1a <- ggplot(P_tab_fig1a)+
                .width=c(0.01,0.95),slab_alpha=0.5,
                point_interval=mean_hdi)+
   scale_x_continuous("")+
-  scale_y_discrete("Randomization?")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(5,50))
+  scale_y_discrete("Randomization?")
 
 fig1b <- ggplot(P_tab_fig1b)+
   geom_jitter(data=P_obsmeans, 
@@ -749,11 +745,7 @@ fig1b <- ggplot(P_tab_fig1b)+
                point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("")+
-  scale_y_discrete("Metapopulation connectedness")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(5,50))
+  scale_y_discrete("Metapopulation connectedness")
 
 fig1c <- ggplot(P_tab_fig1c)+
   geom_jitter(data=P_obsmeans, 
@@ -766,13 +758,13 @@ fig1c <- ggplot(P_tab_fig1c)+
                point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLOCAL)+
   scale_x_continuous("temporal mean of patch population size (adult females)")+
-  scale_y_discrete("Local connectedness")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(5,50))
+  scale_y_discrete("Local connectedness")
 
-fig1a/fig1b/fig1c
+(fig1a/fig1b/fig1c) &
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") &
+  theme(legend.position = "none") & 
+  coord_cartesian(xlim=c(5,50))
 
 ```
 
@@ -802,176 +794,145 @@ P_tab_fig1c %>%
 
 ### Figure 2
 
-```{r P_vars}
-p1<-P_tab_plots %>% 
+```{r fig2}
+
+P_tab_fig2_shuffle <- P_tab_plots %>% 
   group_by(.iteration, SHUFFLE) %>%  
-  summarise(mean = mean(P_alpha)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+  summarise(mean_alpha = mean(P_alpha),
+            mean_phi = mean(P_phi),
+            mean_gamma = mean(P_gamma),
+            mean_uneven = mean(P_uneven)) %>% 
+  ungroup()
+
+P_tab_fig2_length <- P_tab_plots %>% 
+  group_by(.iteration, LENGTH) %>%  
+  summarise(mean_alpha = mean(P_alpha),
+            mean_phi = mean(P_phi),
+            mean_gamma = mean(P_gamma),
+            mean_uneven = mean(P_uneven)) %>% 
+  ungroup()
+
+fig2_alpha_a <- ggplot(P_tab_fig2_shuffle)+
+  stat_halfeye(aes(x=mean_alpha,y=SHUFFLE, fill=SHUFFLE),
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("Randomization?")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(0.8,1.4))
 
-p2<-P_tab_plots %>% 
-  group_by(.iteration, LENGTH) %>% 
-  summarise(mean = mean(P_alpha))  %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+fig2_alpha_b <-  ggplot(P_tab_fig2_length)+
+  stat_halfeye(aes(x=mean_alpha,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous(expression(paste("mean ", alpha, " variability")))+
   scale_y_discrete("Metapopulation connectedness")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(0.8,1.4))
 
-p3<-P_tab_plots %>% 
-  group_by(.iteration, SHUFFLE) %>%  
-  summarise(mean = mean(P_phi)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+fig2_phi_a <- ggplot(P_tab_fig2_shuffle)+
+  stat_halfeye(aes(x=mean_phi,y=SHUFFLE, fill=SHUFFLE),
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(0.20,0.35))
 
-p4<-P_tab_plots %>% 
-  group_by(.iteration, LENGTH) %>% 
-  summarise(mean = mean(P_phi))  %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+fig2_phi_b <-  ggplot(P_tab_fig2_length)+
+  stat_halfeye(aes(x=mean_phi,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous(expression(paste("mean spatial synchrony (", phi1, " = ", 1/beta,")")))+  #phi1 to get the cursive
   scale_y_discrete("")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(0.20,0.35))
 
-p5<-P_tab_plots %>% 
-  group_by(.iteration, SHUFFLE) %>%  
-  summarise(mean = mean(P_gamma)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+fig2_gamma_a <-  ggplot(P_tab_fig2_shuffle)+
+  stat_halfeye(aes(x=mean_gamma,y=SHUFFLE, fill=SHUFFLE),
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(0.15,0.45))
 
-p6<-P_tab_plots %>% 
-  group_by(.iteration, LENGTH) %>% 
-  summarise(mean = mean(P_gamma))  %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+fig2_gamma_b <-  ggplot(P_tab_fig2_length)+
+  stat_halfeye(aes(x=mean_gamma,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous(expression(paste("mean ", gamma, " variability")))+
   scale_y_discrete("")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(0.15,0.45))
 
-p7<-P_tab_plots %>% 
-  group_by(.iteration, SHUFFLE) %>%  
-  summarise(mean = mean(P_uneven)) %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+fig2_uneven_a <-  ggplot(P_tab_fig2_shuffle)+
+  stat_halfeye(aes(x=mean_uneven,y=SHUFFLE, fill=SHUFFLE),
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+
   coord_cartesian(xlim=c(0,1.5))
 
-p8<-P_tab_plots %>% 
-  group_by(.iteration, LENGTH) %>% 
-  summarise(mean = mean(P_uneven))  %>% 
-  ggplot()+
-  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+fig2_uneven_b <-  ggplot(P_tab_fig2_length)+
+  stat_halfeye(aes(x=mean_uneven,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.5,
+               point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("mean spatial unevenness")+
-  scale_y_discrete("")+
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
+  scale_y_discrete("") +
   coord_cartesian(xlim=c(0,1.5))
 
-(p1/p2)|(p3/p4)|(p5/p6)|(p7/p8)
+((fig2_alpha_a/fig2_alpha_b)|
+    (fig2_phi_a/fig2_phi_b)|
+    (fig2_gamma_a/fig2_gamma_b)|
+    (fig2_uneven_a/fig2_uneven_b)) &   
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", 
+                           colour.minor = "grey95") &
+  theme(legend.position = "none")
 
 ```
 
 ### Pairwise comparisons
 
-```{r}
-P_tab_plots %>% 
-  group_by(.iteration, SHUFFLE) %>%  
-  summarise(mean = mean(P_alpha)) %>% 
-  ungroup() %>% 
-  compare_levels(variable=mean, by=SHUFFLE,fun=`/`) %>% 
+```{r pairwise_comp_fig2}
+P_tab_fig2_shuffle %>% 
+  compare_levels(variable=mean_alpha, by=SHUFFLE,fun=`/`) %>% 
   mean_hdi()
 
-P_tab_plots %>% 
-  group_by(.iteration, SHUFFLE) %>%  
-  summarise(mean = mean(P_phi)) %>% 
-  ungroup() %>% 
-  compare_levels(variable=mean, by=SHUFFLE,fun=`/`) %>% 
+P_tab_fig2_shuffle %>% 
+  compare_levels(variable=mean_phi, by=SHUFFLE,fun=`/`) %>% 
   mean_hdi()
 
-P_tab_plots %>% 
-  group_by(.iteration, SHUFFLE) %>%  
-  summarise(mean = mean(P_gamma)) %>% 
-  ungroup() %>% 
-  compare_levels(variable=mean, by=SHUFFLE,fun=`/`) %>% 
+P_tab_fig2_shuffle %>% 
+  compare_levels(variable=mean_gamma, by=SHUFFLE,fun=`/`) %>% 
   mean_hdi()
 
-P_tab_plots %>% 
-  group_by(.iteration, SHUFFLE) %>%  
-  summarise(mean = mean(P_uneven)) %>% 
-  ungroup() %>% 
-  compare_levels(variable=mean, by=SHUFFLE,fun=`/`) %>% 
+P_tab_fig2_shuffle %>% 
+  compare_levels(variable=mean_uneven, by=SHUFFLE,fun=`/`) %>% 
   mean_hdi()
 
-P_tab_plots %>% 
-  group_by(.iteration, LENGTH) %>%  
-  summarise(mean = mean(P_alpha)) %>% 
-  ungroup() %>% 
-  compare_levels(variable=mean, by=LENGTH,fun=`/`) %>% 
+
+P_tab_fig2_length %>% 
+  compare_levels(variable=mean_alpha, by=LENGTH,fun=`/`) %>% 
   mean_hdi()
 
-P_tab_plots %>% 
-  group_by(.iteration, LENGTH) %>%  
-  summarise(mean = mean(P_phi)) %>% 
-  ungroup() %>% 
-  compare_levels(variable=mean, by=LENGTH,fun=`/`) %>% 
+P_tab_fig2_length %>% 
+  compare_levels(variable=mean_phi, by=LENGTH,fun=`/`) %>% 
   mean_hdi()
 
-P_tab_plots %>% 
-  group_by(.iteration, LENGTH) %>%  
-  summarise(mean = mean(P_gamma)) %>% 
-  ungroup() %>% 
-  compare_levels(variable=mean, by=LENGTH,fun=`/`) %>% 
+P_tab_fig2_length %>% 
+  compare_levels(variable=mean_gamma, by=LENGTH,fun=`/`) %>% 
   mean_hdi()
 
-P_tab_plots %>% 
-  group_by(.iteration, LENGTH) %>%  
-  summarise(mean = mean(P_uneven)) %>% 
-  ungroup() %>% 
-  compare_levels(variable=mean, by=LENGTH,fun=`/`) %>% 
+P_tab_fig2_length %>% 
+  compare_levels(variable=mean_uneven, by=LENGTH,fun=`/`) %>% 
   mean_hdi()
 ```
 
