@@ -698,10 +698,33 @@ paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99") #for figure 5
 We average the replicate-specific predictions across treatments, then we plot these posteriors along with the corresponding observed means. The observed means are plotted so that the less precise estimates (higher mean-standardised variance) are more transparent. (three subplots, one per treatment and connectedness variable):
 
 ```{r fig1}
-p1<-P_tab_plots %>% 
+
+P_tab_fig1a <- P_tab_plots %>% 
   group_by(.iteration, SHUFFLE)  %>% 
   summarise(mean = mean(P_mean_all)) %>% 
-  ggplot()+
+  ungroup()
+
+P_tab_fig1b <- P_tab_plots %>% 
+  group_by(.iteration, LENGTH) %>% 
+  summarise(mean = mean(P_mean_all)) %>% 
+  ungroup()
+
+P_tab_fig1c <- P_tab_plots %>% 
+  pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),
+               names_to="local_connectedness",values_to="P_mean_local") %>% 
+  mutate(local_connectedness = fct_recode(factor(local_connectedness),
+                                          `center (high)` = "P_mean_center", 
+                                          `side (medium)` = "P_mean_sides", 
+                                          `corner (low)`="P_mean_corners")) %>%
+  mutate(local_connectedness=fct_relevel(
+      factor(local_connectedness),
+      "corner (low)","side (medium)" ,"center (high)"
+    )) %>% 
+  group_by(.iteration, local_connectedness) %>% 
+  summarise(mean = mean(P_mean_local)) %>% 
+  ungroup()
+
+fig1a <- ggplot(P_tab_fig1a)+
   geom_jitter(data=P_obsmeans, 
               aes(x=P_mean_obs,y=SHUFFLE,alpha=1/(P_var_obs^2/P_mean_obs^2)),
               col="grey60", height=0.2,size=3) +
@@ -716,10 +739,7 @@ p1<-P_tab_plots %>%
   theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(5,50))
 
-p2 <- P_tab_plots %>% 
-  group_by(.iteration, LENGTH) %>% 
-  summarise(mean = mean(P_mean_all))  %>% 
-  ggplot()+
+fig1b <- ggplot(P_tab_fig1b)+
   geom_jitter(data=P_obsmeans, 
               aes(x=P_mean_obs,y=LENGTH,alpha=1/(P_var_obs^2/P_mean_obs^2)),
               col="grey60",height=0.2,size=3) +
@@ -735,20 +755,7 @@ p2 <- P_tab_plots %>%
   theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(5,50))
 
-p3 <- P_tab_plots %>% 
-  pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),
-               names_to="local_connectedness",values_to="P_mean_local") %>% 
-  mutate(local_connectedness = fct_recode(factor(local_connectedness),
-                                          `center (high)` = "P_mean_center", 
-                                          `side (medium)` = "P_mean_sides", 
-                                          `corner (low)`="P_mean_corners")) %>%
-  mutate(local_connectedness=fct_relevel(
-      factor(local_connectedness),
-      "corner (low)","side (medium)" ,"center (high)"
-    )) %>% 
-  group_by(.iteration, local_connectedness) %>% 
-  summarise(mean = mean(P_mean_local)) %>% 
-  ggplot()+
+fig1c <- ggplot(P_tab_fig1c)+
   geom_jitter(data=P_obsmeans, 
               aes(x=P_mean_obs,y=local_connectedness,
                   alpha=1/(P_var_obs^2/P_mean_obs^2)),
@@ -765,7 +772,7 @@ p3 <- P_tab_plots %>%
   theme(legend.position = "none")+ 
   coord_cartesian(xlim=c(5,50))
 
-p1/p2/p3
+fig1a/fig1b/fig1c
 
 ```
 
@@ -776,31 +783,17 @@ We can then compare the posteriors for each subplot, to see how they are differe
 ```{r pairwise_comp_fig1}
 
 ### pairwise for randomization
-P_tab_plots %>% 
-  group_by(.iteration, SHUFFLE)  %>% 
-  summarise(mean = mean(P_mean_all)) %>% 
-  ungroup() %>% 
+P_tab_fig1a %>% 
   compare_levels(variable=mean, by=SHUFFLE, fun=`/`) %>% 
   mean_hdi()
 
 ### pairwise for metapopulation connectedness
-P_tab_plots %>% 
-  group_by(.iteration, LENGTH)  %>% 
-  summarise(mean = mean(P_mean_all)) %>% 
-  ungroup() %>% 
+P_tab_fig1b %>% 
   compare_levels(variable=mean, by=LENGTH, fun=`/`) %>% 
   mean_hdi()
 
 ### pairwise for local connectedness
-P_tab_plots %>% 
-  pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
-  mutate(local_connectedness = fct_recode(factor(local_connectedness),
-                                          `center (8 links)` = "P_mean_center", 
-                                          `side (5 links)` = "P_mean_sides", 
-                                          `corner (3 links)`="P_mean_corners")) %>% 
-  group_by(.iteration, local_connectedness) %>% 
-  summarise(mean = mean(P_mean_local)) %>% 
-    ungroup() %>% 
+P_tab_fig1c %>% 
   compare_levels(variable=mean, by=local_connectedness, fun=`/`) %>% 
   mean_hdi()
 ```
