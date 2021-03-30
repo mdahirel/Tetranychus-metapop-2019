@@ -835,6 +835,11 @@ fig2_alpha_a <- ggplot(P_tab_fig2_shuffle)+
   coord_cartesian(xlim=c(0.8,1.4))
 
 fig2_alpha_b <-  ggplot(P_tab_fig2_length)+
+  #stat_slab(data=P_tab_fig2_length_noshuffle,
+  #             aes(x=mean_alpha,y=LENGTH),
+  #             orientation="horizontal",col="grey",slab_linetype=2,slab_size=0.6,
+  #             fill=NA,
+  #             point_interval=NULL)+
   stat_halfeye(data=P_tab_fig2_length_noshuffle,
                aes(x=mean_alpha,y=LENGTH),
                orientation="horizontal",
