@@ -695,10 +695,9 @@ paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99") #for figure 5
 
 ### Figure 1
 
-We average the replicate-specific predictions across treatments, then we plot these posteriors along with the corresponding observed means. The observed means are plotted so that the less precise estimates (higher mean-standardised variance) are more transparent. (three subplots, one per treatment and connectedness variable):
+We average the replicate-specific predictions across treatments (`fig1_tables`), then we plot these posteriors along with the corresponding observed means. The observed means are plotted so that the less precise estimates (higher mean-standardised variance) are more transparent. (three subplots, one per treatment and connectedness variable):
 
-```{r fig1}
-
+```{r fig1_tables}
 P_tab_fig1a <- P_tab_plots %>% 
   group_by(.iteration, SHUFFLE)  %>% 
   summarise(mean = mean(P_mean_all)) %>% 
@@ -723,25 +722,28 @@ P_tab_fig1c <- P_tab_plots %>%
   group_by(.iteration, local_connectedness) %>% 
   summarise(mean = mean(P_mean_local)) %>% 
   ungroup()
+```
 
+
+```{r fig1}
 fig1a <- ggplot(P_tab_fig1a)+
   geom_jitter(data=P_obsmeans, 
-              aes(x=P_mean_obs,y=SHUFFLE,alpha=1/(P_var_obs^2/P_mean_obs^2)),
+              aes(x=P_mean_obs,y=SHUFFLE,alpha=1/(P_var_obs/P_mean_obs^2)),
               col="grey60", height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=SHUFFLE, fill=SHUFFLE),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("Randomization?")
 
 fig1b <- ggplot(P_tab_fig1b)+
   geom_jitter(data=P_obsmeans, 
-              aes(x=P_mean_obs,y=LENGTH,alpha=1/(P_var_obs^2/P_mean_obs^2)),
+              aes(x=P_mean_obs,y=LENGTH,alpha=1/(P_var_obs/P_mean_obs^2)),
               col="grey60",height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("")+
@@ -750,11 +752,11 @@ fig1b <- ggplot(P_tab_fig1b)+
 fig1c <- ggplot(P_tab_fig1c)+
   geom_jitter(data=P_obsmeans, 
               aes(x=P_mean_obs,y=local_connectedness,
-                  alpha=1/(P_var_obs^2/P_mean_obs^2)),
+                  alpha=1/(P_var_obs/P_mean_obs^2)),
               col="grey60", height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLOCAL)+
   scale_x_continuous("temporal mean of patch population size (adult females)")+
@@ -794,8 +796,7 @@ P_tab_fig1c %>%
 
 ### Figure 2
 
-```{r fig2}
-
+```{r fig2_tables}
 P_tab_fig2_shuffle <- P_tab_plots %>% 
   group_by(.iteration, SHUFFLE) %>%  
   summarise(mean_alpha = mean(P_alpha),
@@ -824,30 +825,38 @@ P_tab_fig2_length_noshuffle <- P_tab_plots %>%
             mean_gamma = mean(P_gamma),
             mean_uneven = mean(P_uneven)) %>% 
   ungroup()
+```
+
+
+```{r fig2}
 
 fig2_alpha_a <- ggplot(P_tab_fig2_shuffle)+
   stat_halfeye(aes(x=mean_alpha,y=SHUFFLE, fill=SHUFFLE),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("Randomization?")+
   coord_cartesian(xlim=c(0.8,1.4))
 
 fig2_alpha_b <-  ggplot(P_tab_fig2_length)+
+  ##line version of the "ghost"
   #stat_slab(data=P_tab_fig2_length_noshuffle,
   #             aes(x=mean_alpha,y=LENGTH),
   #             orientation="horizontal",col="grey",slab_linetype=2,slab_size=0.6,
   #             fill=NA,
   #             point_interval=NULL)+
+  # filled version
   stat_halfeye(data=P_tab_fig2_length_noshuffle,
                aes(x=mean_alpha,y=LENGTH),
+               fill="grey",
                orientation="horizontal",
-               slab_alpha=0.4,
+               slab_alpha=0.3,
                point_interval=NULL)+
+  #actual posterior
   stat_halfeye(aes(x=mean_alpha,y=LENGTH, fill=LENGTH),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous(expression(paste("mean ", alpha, " variability")))+
@@ -857,21 +866,29 @@ fig2_alpha_b <-  ggplot(P_tab_fig2_length)+
 fig2_phi_a <- ggplot(P_tab_fig2_shuffle)+
   stat_halfeye(aes(x=mean_phi,y=SHUFFLE, fill=SHUFFLE),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("")+
   coord_cartesian(xlim=c(0.20,0.35))
 
 fig2_phi_b <-  ggplot(P_tab_fig2_length)+
+  ##line version of the "ghost"
+  #stat_slab(data=P_tab_fig2_length_noshuffle,
+  #             aes(x=mean_phi,y=LENGTH),
+  #             orientation="horizontal",col="grey",slab_linetype=2,slab_size=0.6,
+  #             fill=NA,
+  #             point_interval=NULL)+
+  # filled version
   stat_halfeye(data=P_tab_fig2_length_noshuffle,
                aes(x=mean_phi,y=LENGTH),
                orientation="horizontal",
-               slab_alpha=0.4,
+               slab_alpha=0.3,
                point_interval=NULL)+
+  #actual posterior
   stat_halfeye(aes(x=mean_phi,y=LENGTH, fill=LENGTH),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous(expression(paste("mean spatial synchrony (", phi1, " = ", 1/beta,")")))+  #phi1 to get the cursive
@@ -881,21 +898,29 @@ fig2_phi_b <-  ggplot(P_tab_fig2_length)+
 fig2_gamma_a <-  ggplot(P_tab_fig2_shuffle)+
   stat_halfeye(aes(x=mean_gamma,y=SHUFFLE, fill=SHUFFLE),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("")+
   coord_cartesian(xlim=c(0.15,0.45))
 
 fig2_gamma_b <-  ggplot(P_tab_fig2_length)+
+  ##line version of the "ghost"
+  #stat_slab(data=P_tab_fig2_length_noshuffle,
+  #             aes(x=mean_gamma,y=LENGTH),
+  #             orientation="horizontal",col="grey",slab_linetype=2,slab_size=0.6,
+  #             fill=NA,
+  #             point_interval=NULL)+
+  # filled version
   stat_halfeye(data=P_tab_fig2_length_noshuffle,
                aes(x=mean_gamma,y=LENGTH),
                orientation="horizontal",
-               slab_alpha=0.4,
+               slab_alpha=0.3,
                point_interval=NULL)+
+  #actual posterior
   stat_halfeye(aes(x=mean_gamma,y=LENGTH, fill=LENGTH),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous(expression(paste("mean ", gamma, " variability")))+
@@ -905,21 +930,29 @@ fig2_gamma_b <-  ggplot(P_tab_fig2_length)+
 fig2_uneven_a <-  ggplot(P_tab_fig2_shuffle)+
   stat_halfeye(aes(x=mean_uneven,y=SHUFFLE, fill=SHUFFLE),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_x_continuous("")+
   scale_y_discrete("")+
   coord_cartesian(xlim=c(0,1.5))
 
 fig2_uneven_b <-  ggplot(P_tab_fig2_length)+
+  ##line version of the "ghost"
+  #stat_slab(data=P_tab_fig2_length_noshuffle,
+  #             aes(x=mean_uneven,y=LENGTH),
+  #             orientation="horizontal",col="grey",slab_linetype=2,slab_size=0.6,
+  #             fill=NA,
+  #             point_interval=NULL)+
+  # filled version
   stat_halfeye(data=P_tab_fig2_length_noshuffle,
                aes(x=mean_uneven,y=LENGTH),
                orientation="horizontal",
-               slab_alpha=0.4,
+               slab_alpha=0.3,
                point_interval=NULL)+
+  #actual posterior
   stat_halfeye(aes(x=mean_uneven,y=LENGTH, fill=LENGTH),
                orientation="horizontal",
-               .width=c(0.01,0.95),slab_alpha=0.5,
+               .width=c(0.01,0.95),slab_alpha=0.7,
                point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLENGTH)+
   scale_x_continuous("mean spatial unevenness")+
@@ -978,26 +1011,15 @@ P_tab_fig2_length %>%
 
 ### Figure 3
 
-```{r P_size_inter}
-p1<-P_tab_plots %>% 
+```{r fig3_tables}
+P_tab_fig3a <- P_tab_plots %>% 
   group_by(.iteration, LENGTH, SHUFFLE) %>% 
-  summarise(mean = mean(P_mean_all)) %>% 
-  ggplot()+
-  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=LENGTH,alpha=(1/(P_se^2/P_mean^2))),
-              col="grey60",height=0.2,size=3) +
-  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
-  scale_fill_manual(values=paletteLENGTH)+
-  scale_x_continuous("")+
-  scale_y_discrete("Metapopulation connectedness")+
-  facet_wrap(~SHUFFLE) +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(5,50))
+  summarise(mean = mean(P_mean_all)) %>%
+  ungroup()
 
-p2 <- P_tab_plots %>% 
-  pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),names_to="local_connectedness",values_to="P_mean_local") %>% 
+P_tab_fig3b <- P_tab_plots %>% 
+  pivot_longer(cols=c(P_mean_center,P_mean_sides,P_mean_corners),
+               names_to="local_connectedness",values_to="P_mean_local") %>% 
   mutate(local_connectedness = fct_recode(factor(local_connectedness),
                                           `center (high)` = "P_mean_center", 
                                           `side (medium)` = "P_mean_sides", 
@@ -1008,26 +1030,69 @@ p2 <- P_tab_plots %>%
     )) %>% 
   group_by(.iteration, local_connectedness, SHUFFLE) %>% 
   summarise(mean = mean(P_mean_local)) %>% 
-  ggplot()+
-  geom_jitter(data=P_obsmeans, aes(x=P_mean,y=local_connectedness,alpha=(1/(P_se^2/P_mean^2))),
+  ungroup()
+```
+
+
+```{r fig3}
+fig3a <-  ggplot(P_tab_fig3a)+
+  geom_jitter(data=P_obsmeans, 
+              aes(x=P_mean_obs,y=LENGTH,
+                  alpha=1/(P_var_obs/P_mean_obs^2)),
+              col="grey60",height=0.2,size=3) +
+  stat_halfeye(aes(x=mean,y=LENGTH, fill=LENGTH),
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.7,
+               point_interval=mean_hdi)+
+  scale_fill_manual(values=paletteLENGTH)+
+  scale_x_continuous("")+
+  scale_y_discrete("Metapopulation connectedness")+
+  facet_wrap(~SHUFFLE)
+
+fig3b <- ggplot(P_tab_fig3b)+
+  geom_jitter(data=P_obsmeans, 
+              aes(x=P_mean_obs,y=local_connectedness,
+                  alpha=(1/(P_var_obs/P_mean_obs^2))),
               col="grey60",height=0.2,size=3) +
   stat_halfeye(aes(x=mean,y=local_connectedness, fill=local_connectedness),
-               orientation="horizontal",.width=c(0.01,0.95),slab_alpha=0.5,point_interval=mean_hdi)+
+               orientation="horizontal",
+               .width=c(0.01,0.95),slab_alpha=0.7,
+               point_interval=mean_hdi)+
   scale_fill_manual(values=paletteLOCAL)+
-  scale_x_continuous("mean patch population size (adult females)")+
+  scale_x_continuous("temporal mean of patch population size (adult females)")+
   scale_y_discrete("Local connectedness")+
-  facet_wrap(~SHUFFLE) +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-  theme(legend.position = "none")+ 
-  coord_cartesian(xlim=c(5,50))
+  facet_wrap(~SHUFFLE) 
 
-p1/p2
+(fig3a/fig3b) & 
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none") & 
+  coord_cartesian(xlim=c(5,50))
 ```
 
 ### Pairwise comparisons
 
-to do
+```{r pairwise_comp_fig3}
+P_tab_fig3a %>% 
+  group_by(SHUFFLE) %>% 
+  compare_levels(variable=mean, by=LENGTH,fun=`/`) %>% 
+  mean_hdi()
+
+P_tab_fig3a %>% 
+  group_by(LENGTH) %>% 
+  compare_levels(variable=mean, by=SHUFFLE,fun=`/`) %>% 
+  mean_hdi()
+
+P_tab_fig3b %>% 
+  group_by(SHUFFLE) %>% 
+  compare_levels(variable=mean, by=local_connectedness,fun=`/`) %>% 
+  mean_hdi()
+
+P_tab_fig3b %>% 
+  group_by(local_connectedness) %>% 
+  compare_levels(variable=mean, by=SHUFFLE,fun=`/`) %>% 
+  mean_hdi()
+```
 
 # References
 
