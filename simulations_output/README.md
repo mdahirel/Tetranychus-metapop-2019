@@ -1,7 +1,6 @@
 # Supplementary simulation output
 
-Output from simulations designed to examine the effect of connectedness loss in the absence of density-dependent dispersal and evolution (and thus provide a baseline to help interpret our results).
+A simulation model designed to examine the effect of connectedness loss in the absence of density-dependent dispersal and evolution (and thus provide a baseline to help interpret our results).
 
-The source model can be found at https://github.com/fremorti/Metapopulation_variability_model 
-
-See Supplementary Material and its underlying code in `R/tetranychus-metapop-2019-supplementary.Rmd` for a detailed description of the model and analysis.
+- `Metapopulation_variability_model.py`: the source Python code for the model. This is a copy (as of March 31, 2021) of the original code located at  https://github.com/fremorti/Metapopulation_variability_model . Uses: Python 3.7.3, Pandas 0.24.2, Numpy 1.16.4 and Matplotlib 3.1.0
+- `tetranychus-metapop-2019-sims-disp-mortality.csv`: a file containing simulation outputs for a range of parameters of interest. See Supplementary Material and its underlying code in `R/tetranychus-metapop-2019-supplementary.Rmd` for a detailed description of the model, the parameters chosen, and an analysis of the output.
