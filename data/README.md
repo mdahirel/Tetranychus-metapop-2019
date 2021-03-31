@@ -1,4 +1,4 @@
-# Raw sources
+# Raw data sources
 
 This folder contains the raw experimental data files 
 (for data files saved during the code execution _ results tables, model files... _ see the `R_output` folder)
