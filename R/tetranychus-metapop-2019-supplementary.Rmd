@@ -103,7 +103,10 @@ tibble(LENGTH=4:32,Nstart=10) %>%
 ## Patch-level model
 
 We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because of count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment, local connectedness and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
-You can see below that we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches from the same replicate can be correlated. We average everything downstream of the model as needed, but given the non-linearities everywhere in a GLMM, and the fact patch coordinates are arbitrary (we could have rotated metapopulations 90, 180 or 270° without changing anything meaningful), it is better to calculate every metric of interest replicate by replicate first and only average later. It is important to note that the presence of the temporal matrices means this is a model with observation-level random effects [@harrisonUsingObservationlevelRandom2014], so there is no further overdispersion to account for.
+You can see below that we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches from the same replicate can be correlated. We average everything downstream of the model as needed, but given the non-linearities everywhere in a GLMM, and the fact patch coordinates are arbitrary (we could have rotated metapopulations 90, 180 or 270° without changing anything meaningful), it is better to calculate every metric of interest replicate by replicate first and only average later. It is important to note that the inclusion of temporal covariance matrices generate what are *de facto* observation-level random effects [@harrisonUsingObservationlevelRandom2014], so there is no further overdispersion to account for.
+
+The intuition behind this formulation (latent residuals via OLRE + specified covariance structure) is the same
+as in this comment by Paul Bürkner on the brms R package development page (https://github.com/paulbuerkner/brms/issues/600#issuecomment-511677732).
 
 The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
 
@@ -143,7 +146,7 @@ where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ a
 
 ## Meta-population model
 
-Similarly, we can write a (much simpler) model for the total metapopulation size (total number of adult females) $M$. Because there are no internal correlations to worry about here, we can use a negative binomial model here to model the within-replicate temporal variation:
+Similarly, we can write a (much simpler) model for the total metapopulation size (total number of adult females counted in the metapopulation at one time step) $M$. Because there are here no internal spatial correlations to worry about here, we can use a negative binomial model here to model the within-replicate temporal variation:
 
 $$
 M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}),
@@ -481,10 +484,10 @@ D1 <- sim_mortality %>%
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
 
-**Figure S05.1** -- Effect of dispersal mortality on key metapopulation metrics in simulations
+**Figure S05.1** -- Effect of dispersal mortality on metapopulation variability and population size, in simulated metapopulations
 
 
-The simulation model showed local ($\alpha$) and regional ($\gamma$) variability are expected to increase as a direct result of higher dispersal mortality under connectedness loss. Synchrony ($1/\beta$) remained unaffected (**Fig. S05.1**). This is opposite to the observed metapopulation variabilities in the experiment. There, local ($\alpha$) and regional ($\gamma$) variability showed no effect of the connectedness treatment while synchrony ($1/\beta$) increased with increasing connectedness. Therefore, heterogeneity in the observed dynamics across treatments cannot only be explained by the direct effect of dispersal mortality or similar dispersal costs alone. Other effects such as (dispersal) trait evolution, and/or the consequences of density-dependent dispersal likely affected metapopulation variabilities meaningfully.
+The simulation model showed local ($\alpha$) and regional ($\gamma$) variability are expected to increase as a direct result of higher dispersal mortality under connectedness loss. Synchrony ($1/\beta$) remained unaffected (**Fig. S05.1**). This is opposite to the observed metapopulation variabilities in the experiment. In our experiment, local ($\alpha$) and regional ($\gamma$) variability showed no effect of the connectedness treatment while synchrony ($1/\beta$) increased with increasing connectedness. Therefore, heterogeneity in the observed dynamics across treatments cannot only be explained by the direct effect of dispersal mortality or similar dispersal costs alone. Other effects such as (dispersal) trait evolution, and/or the consequences of density-dependent dispersal likely affected metapopulation variabilities meaningfully.
 
 Simulated population size differences between separate patches are not in accordance with observed results. Simulated metapopulations showed highest sizes in the central patch and lowest in the corner patch, which was the reverse of what was observed. As discussed in the main text, other effects such as genetic structure in the metapopulation, density-dependence of dispersal, or a stronger population regulation effect of resource depletion in the experimental setup likely explain this inconsistency.
 
