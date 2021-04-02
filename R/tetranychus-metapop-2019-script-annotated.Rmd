@@ -687,8 +687,8 @@ P_obsmeans <- P_data %>%
 Before doing the figures, we also need to create color palettes that'll be used throughout:
 
 ```{r figure_palettes}
-paletteLENGTH <- c("#D55E00", "#E69F00", "#F0E442") #for figures 2 to 4
-paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99") #for figure 5
+paletteLENGTH <- c("#D55E00", "#E69F00", "#F0E442")
+paletteLOCAL <-  c("#e66101", "#fdb863", "#5e3c99")
 ```
 
 ## Patch-level means, additive effects
@@ -783,12 +783,26 @@ P_tab_fig1a %>%
 
 ### pairwise for metapopulation connectedness
 P_tab_fig1b %>% 
-  compare_levels(variable=mean, by=LENGTH, fun=`/`) %>% 
+  compare_levels(variable=mean, by=LENGTH, fun=`/`,
+                 comparison=list(                  
+                   # we give the comparison list explicitly since by default it will give 4cm/16cm
+                   # and we'd rather present the reverse
+                   c("16 cm (low)","4 cm (high)"),
+                   c("16 cm (low)", "8 cm (medium)"),
+                   c("8 cm (medium)", "4 cm (high)")
+                 )) %>% 
   mean_hdi()
 
 ### pairwise for local connectedness
 P_tab_fig1c %>% 
-  compare_levels(variable=mean, by=local_connectedness, fun=`/`) %>% 
+  compare_levels(variable=mean, by=local_connectedness, fun=`/`,
+                 comparison=list(                  
+                   # we give the comparison list explicitly since by default it will give center/corner
+                   # and we'd rather present the reverse
+                   c("corner (low)","center (high)"),
+                   c("corner (low)", "side (medium)"),
+                   c("side (medium)", "center (high)")
+                 )) %>% 
   mean_hdi()
 ```
 
@@ -991,19 +1005,47 @@ P_tab_fig2_shuffle %>%
 
 
 P_tab_fig2_length %>% 
-  compare_levels(variable=mean_alpha, by=LENGTH,fun=`/`) %>% 
+  compare_levels(variable=mean_alpha, by=LENGTH,fun=`/`,
+                 comparison=list(                  
+                   # we give the comparison list explicitly since by default it will give 4cm/16cm
+                   # and we'd rather present the reverse
+                   c("16 cm (low)","4 cm (high)"),
+                   c("16 cm (low)", "8 cm (medium)"),
+                   c("8 cm (medium)", "4 cm (high)")
+                 )) %>% 
   mean_hdi()
 
 P_tab_fig2_length %>% 
-  compare_levels(variable=mean_phi, by=LENGTH,fun=`/`) %>% 
+  compare_levels(variable=mean_phi, by=LENGTH,fun=`/`,
+                 comparison=list(                  
+                   # we give the comparison list explicitly since by default it will give 4cm/16cm
+                   # and we'd rather present the reverse
+                   c("16 cm (low)","4 cm (high)"),
+                   c("16 cm (low)", "8 cm (medium)"),
+                   c("8 cm (medium)", "4 cm (high)")
+                 )) %>% 
   mean_hdi()
 
 P_tab_fig2_length %>% 
-  compare_levels(variable=mean_gamma, by=LENGTH,fun=`/`) %>% 
+  compare_levels(variable=mean_gamma, by=LENGTH,fun=`/`,
+                 comparison=list(                  
+                   # we give the comparison list explicitly since by default it will give 4cm/16cm
+                   # and we'd rather present the reverse
+                   c("16 cm (low)","4 cm (high)"),
+                   c("16 cm (low)", "8 cm (medium)"),
+                   c("8 cm (medium)", "4 cm (high)")
+                 )) %>% 
   mean_hdi()
 
 P_tab_fig2_length %>% 
-  compare_levels(variable=mean_uneven, by=LENGTH,fun=`/`) %>% 
+  compare_levels(variable=mean_uneven, by=LENGTH,fun=`/`,
+                 comparison=list(                  
+                   # we give the comparison list explicitly since by default it will give 4cm/16cm
+                   # and we'd rather present the reverse
+                   c("16 cm (low)","4 cm (high)"),
+                   c("16 cm (low)", "8 cm (medium)"),
+                   c("8 cm (medium)", "4 cm (high)")
+                 )) %>% 
   mean_hdi()
 ```
 
@@ -1075,7 +1117,14 @@ fig3b <- ggplot(P_tab_fig3b)+
 ```{r pairwise_comp_fig3}
 P_tab_fig3a %>% 
   group_by(SHUFFLE) %>% 
-  compare_levels(variable=mean, by=LENGTH,fun=`/`) %>% 
+  compare_levels(variable=mean, by=LENGTH,fun=`/`,
+                 comparison=list(                  
+                   # we give the comparison list explicitly since by default it will give 4cm/16cm
+                   # and we'd rather present the reverse
+                   c("16 cm (low)","4 cm (high)"),
+                   c("16 cm (low)", "8 cm (medium)"),
+                   c("8 cm (medium)", "4 cm (high)")
+                 )) %>% 
   mean_hdi()
 
 P_tab_fig3a %>% 
@@ -1085,7 +1134,14 @@ P_tab_fig3a %>%
 
 P_tab_fig3b %>% 
   group_by(SHUFFLE) %>% 
-  compare_levels(variable=mean, by=local_connectedness,fun=`/`) %>% 
+  compare_levels(variable=mean, by=local_connectedness,fun=`/`,
+                 comparison=list(                  
+                   # we give the comparison list explicitly since by default it will give center/corner
+                   # and we'd rather present the reverse
+                   c("corner (low)","center (high)"),
+                   c("corner (low)", "side (medium)"),
+                   c("side (medium)", "center (high)")
+                 )) %>% 
   mean_hdi()
 
 P_tab_fig3b %>% 
