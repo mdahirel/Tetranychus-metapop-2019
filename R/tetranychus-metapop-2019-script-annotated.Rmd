@@ -36,27 +36,27 @@ First, we’re going to load all the packages we need. This includes the `tidyve
 This script uses the Stan language [@carpenterStanProbabilisticProgramming2017] for model fitting (we can use the `rstan` or the `cmdstanr` implementation; see https://mc-stan.org/ for how to install them). The `brms` package [@burknerBrmsPackageBayesian2017] allows you to write a wide range of Stan models using R syntax; it then does the “translation” itself before fitting. The `QGglmm` package by de Villemereuil *et al.* [-@villemereuilGeneralMethodsEvolutionary2016] is useful to convert latent scale variance-covariance matrices from a GLMM output to observed scale matrices, needed for our analysis.
 
 ```{r packages-loading}
-#library(rstan) ## Stan backend
+#[R v4.0.4 and 4.0.5]
 
 library(cmdstanr)    # [github::stan-dev/cmdstanr] v0.3.0 
 ## Stan backend (another)
 
-library(brms)        # CRAN v2.14.4 
+library(brms)        # CRAN v2.15.0        
 ## the interface we are using
 
 
-library(tidyverse)   # CRAN v1.3.0
-library(bayesplot)   # CRAN v1.8.0
-library(tidybayes)   # CRAN v2.3.1
-library(matrixStats) # CRAN v0.58.0
+library(tidyverse)   # CRAN v1.3.0   
+library(bayesplot)   # CRAN v1.8.0   
+library(tidybayes)   # CRAN v2.3.1   
+library(matrixStats) # CRAN v0.58.0 
 
-library(QGglmm)      # CRAN v0.7.4 
+library(QGglmm)      # CRAN v0.7.4       
 ## this package is needed to help convert variance-covariance matrices from latent to data scale
 
-library(patchwork)   # [github::thomasp85/patchwork] v1.1.0.9000 
+library(patchwork)   # CRAN v1.1.1    
 #plotting
 
-library(here)        # CRAN v1.0.1
+library(here)        # CRAN v1.0.1        
 
 ## some useful default settings
 # rstan_options(auto_write = TRUE) #for rstan

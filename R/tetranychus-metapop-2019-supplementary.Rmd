@@ -13,20 +13,24 @@ knitr::opts_chunk$set(echo = FALSE, eval = TRUE, message = FALSE, warning = FALS
 ```
 
 ```{r load-packages}
-library(cmdstanr) ## Stan backend (another)
-library(brms) ## the interface we are using
+#[R v4.0.5]
+library(cmdstanr)    # [github::stan-dev/cmdstanr] v0.3.0 
+## Stan backend
+library(brms)        # CRAN v2.15.0 ## the interface we are using
 
 
-library(tidyverse)
-library(bayesplot)
-library(tidybayes)
-library(matrixStats)
+library(tidyverse)   # CRAN v1.3.0
+library(bayesplot)   # CRAN v1.8.0
+library(tidybayes)   # CRAN v2.3.1
+library(matrixStats) # CRAN v0.58.0
 
-library(QGglmm) ## this package is needed to help convert variance-covariance matrices from latent to data scale
+library(QGglmm)      # CRAN v0.7.4 
+## this package is needed to help convert variance-covariance matrices from latent to data scale
 
-library(patchwork) # plotting
+library(patchwork)   # CRAN v1.1.1 
+# plotting
 
-library(here)
+library(here)        # CRAN v1.0.1
 
 ## some useful default settings
 # rstan_options(auto_write = TRUE) #for rstan
