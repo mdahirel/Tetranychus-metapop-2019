@@ -1,6 +1,6 @@
 ---
 title: "Supplementary Material for \"Individual heterogeneity and its importance for metapopulation dynamics\""
-author: Stefano Masier, Maxime Dahirel, Frederik Mortier, Dries Bonte
+author: authors names redacted for anonymised review
 output: pdf_document
 editor_options:
   chunk_output_type: console

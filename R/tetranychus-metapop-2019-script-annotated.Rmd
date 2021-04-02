@@ -1,7 +1,7 @@
 ---
 title: Analysis of replicated *Tetranychus* metapopulation experiment - abundance and
   temporal variability
-author: "Stefano Masier, Maxime Dahirel, Frederik Mortier, Dries Bonte (this code by M. Dahirel and S. Masier)"
+author: "<names redacted for anonymised review>"
 date:
 output: 
   html_document:

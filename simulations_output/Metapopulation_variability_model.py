@@ -1,7 +1,7 @@
 """copied code since previous script has interpreter issues"""
 '''
 Created on Feb 27, 2018
-Author: fremorti
+Author: <redacted for anonymised review>
 '''
 
 import random as rnd
