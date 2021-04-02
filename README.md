@@ -9,7 +9,7 @@ This repo contains data and code needed to re-do the analyses and figures in our
 
 
 
-data in `.csv` format are in the `data` folder, R script in`Rmd` and `html` format (including detailed information about the analysis) in the `R` folder.
+data in `.csv` format are in the `data` folder, R script in`Rmd` format (including detailed information about the analysis) in the `R` folder.
 
 This folder is a RStudio project folder, and the script uses the `here` package (see also [here](https://github.com/jennybc/here_here)). This means all file paths are relative, and the analysis should work on your computer no questions asked, whether you use the R project or not, no code line to change as long as you download the entire repo (you just need to install all the needed packages first, of course).
 
