@@ -24,7 +24,7 @@ library(matrixStats)
 
 library(QGglmm) ## this package is needed to help convert variance-covariance matrices from latent to data scale
 
-library(patchwork) #plotting
+library(patchwork) # plotting
 
 library(here)
 
@@ -32,10 +32,9 @@ library(here)
 # rstan_options(auto_write = TRUE) #for rstan
 options(mc.cores = 4) ## reduce/increase depending on cores available
 N_chains <- 4
-N_warmup <- 2000   ## used for publication: 2000 ## 200 is enough for tests
-N_iter <- N_warmup + 2000  ## recommended for publication-level quality: 2000 iterations post warmup when all chains combined 
+N_warmup <- 2000 ## used for publication: 2000 ## 200 is enough for tests
+N_iter <- N_warmup + 2000 ## recommended for publication-level quality: 2000 iterations post warmup when all chains combined
 ## Nwarmup + 200 is probably good enough for tests
-
 ```
 
 # S01 -- Experimental metapopulations -- practical details and maintenance during experiments
@@ -53,28 +52,30 @@ We tested how dispersal success and individual survival is affected by the lengt
 We tested 4, 8, 16 and 32 cm-long bridges, with five independent replicates per length. The plastic bridges were mounted on a bed of cotton, kept wet using abundant distilled water, and connected on one end only to a fresh bean (*Phaseolus vulgaris* L. cv. Prélude) leaf cut (2.5 × 1.5 cm^2^ rectangle) to provide secure shelters and food sources to the mites. At the opposite ends of each bridge, we placed 10 adult females from our LS-VL stock population using a thin pen brush. Female age was not controlled for, to better approximate a real, non-synchronized population. Females were placed on a "waiting area", delimited by a strip of wet paper placed orthogonally onto the bridge approximately 2 cm from the leaf-free end, in order to stop female dispersal until all individuals had been placed. Similar strips were used to lock the leaves in place on the wet cotton and to the bridges, as well as at the open end of the plastic bridge to keep it adherent to the wet cotton. No paper strips were placed along the bridge itself, so dispersing mites were not prevented from falling into wet cotton. All replicates were initialized at the same time, by removing the paper strips that stopped movement; the bridges were then stored into a climatically controlled room for 24 hours ($\simeq$ 25°C, L:D 16:8). We then counted the number of live mites on the bridges themselves and the arrival leaves; every unaccounted individual was considered dead and sunken into the wet cotton. We analyzed the effect of bridge length (as a continuous variable) on the proportion of dead individuals using a binomial generalized linear model with weakly informative priors ($\mathrm{Normal}(0,1.5)$ for the intercept and $\mathrm{Normal}(0,1)$ for the slope)[@mcelreathStatisticalRethinkingBayesian2020].
 
 ```{r data-load-prelim}
-prelim_data <- read_csv(here("data","tetranychus-metapop-2019-bridge-trials.csv"))
+prelim_data <- read_csv(here("data", "tetranychus-metapop-2019-bridge-trials.csv"))
 ```
 
 ```{r prelim-model}
-prelim_data<-prelim_data %>% 
-  mutate(length_centered=LENGTH-mean(LENGTH))
+prelim_data <- prelim_data %>%
+  mutate(length_centered = LENGTH - mean(LENGTH))
 
-if(file.exists(here("R_output","supplementary_model.Rdata"))){
-  load(here("R_output","supplementary_model.Rdata"))
-  }else
-    {
-mod_bridge <- brm(
-  Ndead_24h|trials(Nstart)~length_centered,family=binomial, data=prelim_data,
-  chains=4,iter=4000,warmup=2000,
-  prior=c(set_prior("normal(0,1.5)",class="Intercept"),
-          set_prior("normal(0,1)",class="b")),
-  seed=42,backend="cmdstanr"
-)
-save(list=c("mod_bridge"), file=here("R_output","supplementary_model.Rdata"))
+if (file.exists(here("R_output", "supplementary_model.Rdata"))) {
+  load(here("R_output", "supplementary_model.Rdata"))
+} else {
+  mod_bridge <- brm(
+    Ndead_24h | trials(Nstart) ~ length_centered,
+    family = binomial, data = prelim_data,
+    chains = 4, iter = 4000, warmup = 2000,
+    prior = c(
+      set_prior("normal(0,1.5)", class = "Intercept"),
+      set_prior("normal(0,1)", class = "b")
+    ),
+    seed = 42, backend = "cmdstanr"
+  )
+  save(list = c("mod_bridge"), file = here("R_output", "supplementary_model.Rdata"))
 }
 
-beta_slope<-posterior_samples(mod_bridge) %>% 
+beta_slope <- posterior_samples(mod_bridge) %>%
   mean_hdi(b_length_centered)
 ```
 
@@ -83,13 +84,13 @@ beta_slope<-posterior_samples(mod_bridge) %>%
 The proportion of dead individuals increased with the length of the plastic bridge the mites were placed upon ($\beta$ = `r round(beta_slope$b_length_centered,2)` [`r round(beta_slope$.lower,2)`, `r round(beta_slope$.upper,2)`], **Fig. S02.1**).
 
 ```{r prelim-plot, fig.width=4, fig.height=4}
-tibble(LENGTH=4:32,Nstart=10) %>% 
-  mutate(length_centered=LENGTH-mean(prelim_data$LENGTH)) %>% 
-  add_fitted_draws(mod_bridge) %>% 
-  ggplot()+
-  stat_lineribbon(aes(LENGTH,.value/Nstart), fill="grey",.width=c(0.95),point_interval=mean_hdi)+
-  geom_point(data=prelim_data,aes(LENGTH,Ndead_24h/Nstart),pch= 21,fill="black",size=3) + 
-  scale_x_continuous("bridge length (cm)")+
+tibble(LENGTH = 4:32, Nstart = 10) %>%
+  mutate(length_centered = LENGTH - mean(prelim_data$LENGTH)) %>%
+  add_fitted_draws(mod_bridge) %>%
+  ggplot() +
+  stat_lineribbon(aes(LENGTH, .value / Nstart), fill = "grey", .width = c(0.95), point_interval = mean_hdi) +
+  geom_point(data = prelim_data, aes(LENGTH, Ndead_24h / Nstart), pch = 21, fill = "black", size = 3) +
+  scale_x_continuous("bridge length (cm)") +
   scale_y_continuous("proportion dead after 24h") +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
@@ -178,174 +179,189 @@ In the metapopulation-level model, we replaced the prior for $\beta_{0}$ by $\ma
 
 ```{r data-reshape}
 
-raw_data <- read_csv(here("data","tetranychus-metapop-2019-dataset.csv"))
+raw_data <- read_csv(here("data", "tetranychus-metapop-2019-dataset.csv"))
 
-data_wide <- raw_data %>% 
-  mutate(PATCH= paste("P", PATCH, sep = "")) %>% 
-  mutate(PATCH= str_remove(PATCH, "[.]")) %>% 
-### the two lines above make patches names (a) easier to use as column names (letter as 1st character)
-### and consistent with brms standards on response variable names (best to avoid dots and underscore,
-### as some functions will remove them for output names and then matching input and output becomes slightly harder)
-  mutate(LENGTH = fct_recode(factor(LENGTH),
-                             `16 cm (low)` = "16",
-                             `8 cm (medium)` = "8",
-                             `4 cm (high)` = "4"),
-         SHUFFLE = fct_recode(as.factor(SHUFFLE), 
-                              `control`="NO",
-                              `randomized`="R")) %>% 
+data_wide <- raw_data %>%
+  mutate(PATCH = paste("P", PATCH, sep = "")) %>%
+  mutate(PATCH = str_remove(PATCH, "[.]")) %>%
+  ### the two lines above make patches names (a) easier to use as column names (letter as 1st character)
+  ### and consistent with brms standards on response variable names (best to avoid dots and underscore,
+  ### as some functions will remove them for output names and then matching input and output becomes slightly harder)
+  mutate(
+    LENGTH = fct_recode(factor(LENGTH),
+      `16 cm (low)` = "16",
+      `8 cm (medium)` = "8",
+      `4 cm (high)` = "4"
+    ),
+    SHUFFLE = fct_recode(as.factor(SHUFFLE),
+      `control` = "NO",
+      `randomized` = "R"
+    )
+  ) %>%
   pivot_wider(names_from = PATCH, values_from = AFEMA) %>%
-  drop_na() #3 out of ~550 rows contain NAs in at least one patch, discard
-
+  drop_na() # 3 out of ~550 rows contain NAs in at least one patch, discard
 ```
 
 ```{r data-metapop}
-M_data <- data_wide %>% 
-  mutate(METAPOPSUM = select(.,P11:P33) %>% rowSums()) %>% 
-  select(METAPOP_ID,LENGTH,SHUFFLE,REPLICATE,WEEK,METAPOPSUM)%>% 
+M_data <- data_wide %>%
+  mutate(METAPOPSUM = select(., P11:P33) %>% rowSums()) %>%
+  select(METAPOP_ID, LENGTH, SHUFFLE, REPLICATE, WEEK, METAPOPSUM) %>%
   mutate(LENGTH = factor(LENGTH))
 
 ## adding dummy centered variables
-M_data <- M_data %>% 
-  mutate(is.randomized = as.numeric(SHUFFLE =="randomized") - mean(as.numeric(SHUFFLE =="randomized"))) %>% 
-  mutate(is.landscape8 = as.numeric(LENGTH =="8 cm (medium)") - mean(as.numeric(LENGTH =="8 cm (medium)")),
-         is.landscape16 = as.numeric(LENGTH =="16 cm (low)") - mean(as.numeric(LENGTH =="16 cm (low)")))
-
+M_data <- M_data %>%
+  mutate(is.randomized = as.numeric(SHUFFLE == "randomized") - mean(as.numeric(SHUFFLE == "randomized"))) %>%
+  mutate(
+    is.landscape8 = as.numeric(LENGTH == "8 cm (medium)") - mean(as.numeric(LENGTH == "8 cm (medium)")),
+    is.landscape16 = as.numeric(LENGTH == "16 cm (low)") - mean(as.numeric(LENGTH == "16 cm (low)"))
+  )
 ```
 
 ```{r load-model-output}
-P_tab_plots <- read_csv(here("R_output","P_tab.csv"))
-load(here("R_output","M_mod.Rdata"))
+P_tab_plots <- read_csv(here("R_output", "P_tab.csv"))
+load(here("R_output", "M_mod.Rdata"))
 ```
 
 
 ```{r reshape-model-output}
-M_tab_obs <- M_data %>% 
-  group_by(METAPOP_ID) %>% 
-  summarise(METAPOP_MEAN=mean(METAPOPSUM))
+M_tab_obs <- M_data %>%
+  group_by(METAPOP_ID) %>%
+  summarise(METAPOP_MEAN = mean(METAPOPSUM))
 
-M_tab <- M_data %>% filter(WEEK==1) %>%
-  select(LENGTH,SHUFFLE,METAPOP_ID,
-         is.landscape8,is.landscape16,is.randomized) %>% 
-  add_fitted_draws(M_mod) %>% 
-  group_by(LENGTH,SHUFFLE, METAPOP_ID) %>% 
-  mean_hdi(.value) %>% 
-  rename(.lower_M=".lower",.upper_M=".upper",.value_M=".value")
+M_tab <- M_data %>%
+  filter(WEEK == 1) %>%
+  select(
+    LENGTH, SHUFFLE, METAPOP_ID,
+    is.landscape8, is.landscape16, is.randomized
+  ) %>%
+  add_fitted_draws(M_mod) %>%
+  group_by(LENGTH, SHUFFLE, METAPOP_ID) %>%
+  mean_hdi(.value) %>%
+  rename(.lower_M = ".lower", .upper_M = ".upper", .value_M = ".value")
 
-M_tab_shuffle <- M_data %>% filter(WEEK==1) %>%
-  select(SHUFFLE,METAPOP_ID,
-         is.landscape8,is.landscape16,is.randomized) %>% 
-  add_fitted_draws(M_mod,re_formula = NA) %>% 
-  group_by(SHUFFLE) %>% 
-  mean_hdi(.value) %>% 
-  rename(.lower_M_trt=".lower",.upper_M_trt=".upper",.value_M_trt=".value")
+M_tab_shuffle <- M_data %>%
+  filter(WEEK == 1) %>%
+  select(
+    SHUFFLE, METAPOP_ID,
+    is.landscape8, is.landscape16, is.randomized
+  ) %>%
+  add_fitted_draws(M_mod, re_formula = NA) %>%
+  group_by(SHUFFLE) %>%
+  mean_hdi(.value) %>%
+  rename(.lower_M_trt = ".lower", .upper_M_trt = ".upper", .value_M_trt = ".value")
 
 
-P_tab_M <- P_tab_plots %>% 
-  select(LENGTH,SHUFFLE,METAPOP_ID, P_mean_all) %>% 
-  group_by(LENGTH,SHUFFLE, METAPOP_ID) %>% 
-  mutate(.value_P = P_mean_all*9) %>% 
-  mean_hdi(.value_P) %>% 
-  rename(.lower_P=".lower",.upper_P=".upper")
+P_tab_M <- P_tab_plots %>%
+  select(LENGTH, SHUFFLE, METAPOP_ID, P_mean_all) %>%
+  group_by(LENGTH, SHUFFLE, METAPOP_ID) %>%
+  mutate(.value_P = P_mean_all * 9) %>%
+  mean_hdi(.value_P) %>%
+  rename(.lower_P = ".lower", .upper_P = ".upper")
 
-P_tab_M_shuffle <- P_tab_plots %>% 
-  select(SHUFFLE,METAPOP_ID, P_mean_all,.iteration) %>% 
-  group_by(SHUFFLE,.iteration) %>% 
-  summarise(.value_P_trt = mean(P_mean_all*9)) %>% 
-  group_by(SHUFFLE) %>% 
-  mean_hdi(.value_P_trt) %>% 
-  rename(.lower_P_trt=".lower",.upper_P_trt=".upper")
-###double check the tabs above
+P_tab_M_shuffle <- P_tab_plots %>%
+  select(SHUFFLE, METAPOP_ID, P_mean_all, .iteration) %>%
+  group_by(SHUFFLE, .iteration) %>%
+  summarise(.value_P_trt = mean(P_mean_all * 9)) %>%
+  group_by(SHUFFLE) %>%
+  mean_hdi(.value_P_trt) %>%
+  rename(.lower_P_trt = ".lower", .upper_P_trt = ".upper")
+### double check the tabs above
 ```
 
 
 ```{r reshape-model-output2}
-M_tab_length <- M_data %>% filter(WEEK==1) %>%
-  select(LENGTH,METAPOP_ID,
-         is.landscape8,is.landscape16,is.randomized) %>% 
-  add_fitted_draws(M_mod,re_formula = NA) %>% 
-  group_by(LENGTH) %>% 
-  mean_hdi(.value) %>% 
-  rename(.lower_M_trt=".lower",.upper_M_trt=".upper",.value_M_trt=".value")
+M_tab_length <- M_data %>%
+  filter(WEEK == 1) %>%
+  select(
+    LENGTH, METAPOP_ID,
+    is.landscape8, is.landscape16, is.randomized
+  ) %>%
+  add_fitted_draws(M_mod, re_formula = NA) %>%
+  group_by(LENGTH) %>%
+  mean_hdi(.value) %>%
+  rename(.lower_M_trt = ".lower", .upper_M_trt = ".upper", .value_M_trt = ".value")
 
-P_tab_M_length <- P_tab_plots %>% 
-  select(LENGTH,METAPOP_ID, P_mean_all,.iteration) %>% 
-  group_by(LENGTH,.iteration) %>% 
-  summarise(.value_P_trt = mean(P_mean_all*9)) %>% 
-  group_by(LENGTH) %>% 
-  mean_hdi(.value_P_trt) %>% 
-  rename(.lower_P_trt=".lower",.upper_P_trt=".upper")
-###double check the tabs above
+P_tab_M_length <- P_tab_plots %>%
+  select(LENGTH, METAPOP_ID, P_mean_all, .iteration) %>%
+  group_by(LENGTH, .iteration) %>%
+  summarise(.value_P_trt = mean(P_mean_all * 9)) %>%
+  group_by(LENGTH) %>%
+  mean_hdi(.value_P_trt) %>%
+  rename(.lower_P_trt = ".lower", .upper_P_trt = ".upper")
+### double check the tabs above
 ```
 
 ```{r plot-fig-s04-1, fig.width=8, fig.height=4}
-pA <- left_join(M_tab,P_tab_M) %>% 
-  left_join(M_tab_shuffle) %>% 
-  left_join(P_tab_M_shuffle) %>% 
-  ggplot()+
-  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey85")+
-  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey85")+
-  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey85")+
-  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= SHUFFLE))+
-  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= SHUFFLE))+
-  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= SHUFFLE))+
-  geom_abline(intercept = 0,slope=1,lty=2)+
-  scale_y_continuous("metapopulation size (metapop. model)",limits=c(80,420))+
-  scale_x_continuous("metapopulation size (patch model)",limits=c(80,420)) +
+pA <- left_join(M_tab, P_tab_M) %>%
+  left_join(M_tab_shuffle) %>%
+  left_join(P_tab_M_shuffle) %>%
+  ggplot() +
+  geom_segment(aes(y = .value_M, yend = .value_M, x = .lower_P, xend = .upper_P), col = "grey85") +
+  geom_segment(aes(x = .value_P, xend = .value_P, y = .lower_M, yend = .upper_M), col = "grey85") +
+  geom_point(aes(x = .value_P, y = .value_M), size = 2, col = "grey85") +
+  geom_segment(aes(y = .value_M_trt, yend = .value_M_trt, x = .lower_P_trt, xend = .upper_P_trt, col = SHUFFLE)) +
+  geom_segment(aes(x = .value_P_trt, xend = .value_P_trt, y = .lower_M_trt, yend = .upper_M_trt, col = SHUFFLE)) +
+  geom_point(aes(x = .value_P_trt, y = .value_M_trt, col = SHUFFLE)) +
+  geom_abline(intercept = 0, slope = 1, lty = 2) +
+  scale_y_continuous("metapopulation size (metapop. model)", limits = c(80, 420)) +
+  scale_x_continuous("metapopulation size (patch model)", limits = c(80, 420)) +
   cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
-  theme(legend.title=element_blank())
-  
-pB <- left_join(M_tab,P_tab_M) %>% 
-  left_join(M_tab_length) %>% 
-  left_join(P_tab_M_length) %>% 
-  ungroup() %>% 
-  mutate(
-    LENGTH=fct_relevel(
-      factor(LENGTH),
-      "16 cm (low)","8 cm (medium)","4 cm (high)")) %>% 
-  ggplot()+
-  geom_segment(aes(y=.value_M,yend=.value_M,x=.lower_P,xend=.upper_P),col="grey85")+
-  geom_segment(aes(x=.value_P,xend=.value_P,y=.lower_M,yend=.upper_M),col="grey85")+
-  geom_point(aes(x=.value_P,y=.value_M),size=2,col="grey85")+
-  geom_segment(aes(y=.value_M_trt,yend=.value_M_trt,x=.lower_P_trt,xend=.upper_P_trt, col= LENGTH))+
-  geom_segment(aes(x=.value_P_trt,xend=.value_P_trt,y=.lower_M_trt,yend=.upper_M_trt, col= LENGTH))+
-  geom_point(aes(x=.value_P_trt,y=.value_M_trt, col= LENGTH))+
-  geom_abline(intercept = 0,slope=1, lty=2)+
-  scale_colour_manual(values=c("#D55E00", "#E69F00", "#F0E442"))+
-  scale_y_continuous("metapopulation size (metapop. model)",limits=c(80,420))+
-  scale_x_continuous("metapopulation size (patch model)",limits=c(80,420)) +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
-  theme(legend.title=element_blank())
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.title = element_blank())
 
-(pA | pB) & theme(legend.position="bottom") & plot_annotation(tag_levels = "A")
+pB <- left_join(M_tab, P_tab_M) %>%
+  left_join(M_tab_length) %>%
+  left_join(P_tab_M_length) %>%
+  ungroup() %>%
+  mutate(
+    LENGTH = fct_relevel(
+      factor(LENGTH),
+      "16 cm (low)", "8 cm (medium)", "4 cm (high)"
+    )
+  ) %>%
+  ggplot() +
+  geom_segment(aes(y = .value_M, yend = .value_M, x = .lower_P, xend = .upper_P), col = "grey85") +
+  geom_segment(aes(x = .value_P, xend = .value_P, y = .lower_M, yend = .upper_M), col = "grey85") +
+  geom_point(aes(x = .value_P, y = .value_M), size = 2, col = "grey85") +
+  geom_segment(aes(y = .value_M_trt, yend = .value_M_trt, x = .lower_P_trt, xend = .upper_P_trt, col = LENGTH)) +
+  geom_segment(aes(x = .value_P_trt, xend = .value_P_trt, y = .lower_M_trt, yend = .upper_M_trt, col = LENGTH)) +
+  geom_point(aes(x = .value_P_trt, y = .value_M_trt, col = LENGTH)) +
+  geom_abline(intercept = 0, slope = 1, lty = 2) +
+  scale_colour_manual(values = c("#D55E00", "#E69F00", "#F0E442")) +
+  scale_y_continuous("metapopulation size (metapop. model)", limits = c(80, 420)) +
+  scale_x_continuous("metapopulation size (patch model)", limits = c(80, 420)) +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.title = element_blank())
+
+(pA | pB) & theme(legend.position = "bottom") & plot_annotation(tag_levels = "A")
 ```
 
 **Figure S04.1** -- Comparisons between mean metapopulation size predictions (with 95% intervals) from the metapopulation-level model vs. the patch-level model (multiplying mean predictions by the number of patches, implicitly assuming patches are temporally independent). Treatment-level predictions (A: randomization treatment, B: metapopulation connectedness treatment) are added over replicate-level predictions (in grey).  Dotted line: $y = x$.
 
 
 ```{r plot-fig-s04-2, fig.width=8, fig.height=4}
-pA <- left_join(M_tab,M_tab_obs) %>% 
-  ggplot()+
-  geom_segment(aes(x=METAPOP_MEAN,xend=METAPOP_MEAN,y=.lower_M,yend=.upper_M),col="grey85")+
-  geom_point(aes(x=METAPOP_MEAN,y=.value_M),size=2,col="grey85")+
-  geom_abline(intercept = 0,slope=1,lty=2)+
-  scale_y_continuous("metapopulation size (metapop. model)",limits=c(80,420))+
-  scale_x_continuous("observed mean metapopulation size",limits=c(80,420)) +
+pA <- left_join(M_tab, M_tab_obs) %>%
+  ggplot() +
+  geom_segment(aes(x = METAPOP_MEAN, xend = METAPOP_MEAN, y = .lower_M, yend = .upper_M), col = "grey85") +
+  geom_point(aes(x = METAPOP_MEAN, y = .value_M), size = 2, col = "grey85") +
+  geom_abline(intercept = 0, slope = 1, lty = 2) +
+  scale_y_continuous("metapopulation size (metapop. model)", limits = c(80, 420)) +
+  scale_x_continuous("observed mean metapopulation size", limits = c(80, 420)) +
   cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
-  theme(legend.title=element_blank())
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.title = element_blank())
 
-pB <- left_join(P_tab_M,M_tab_obs) %>% 
-  ggplot()+
-  geom_segment(aes(x=METAPOP_MEAN,xend=METAPOP_MEAN,y=.lower_P,yend=.upper_P),col="grey85")+
-  geom_point(aes(x=METAPOP_MEAN,y=.value_P),size=2,col="grey85")+
-  geom_abline(intercept = 0,slope=1,lty=2)+
-  scale_y_continuous("metapopulation size (patch model)",limits=c(80,420))+
-  scale_x_continuous("observed mean metapopulation size",limits=c(80,420)) +
+pB <- left_join(P_tab_M, M_tab_obs) %>%
+  ggplot() +
+  geom_segment(aes(x = METAPOP_MEAN, xend = METAPOP_MEAN, y = .lower_P, yend = .upper_P), col = "grey85") +
+  geom_point(aes(x = METAPOP_MEAN, y = .value_P), size = 2, col = "grey85") +
+  geom_abline(intercept = 0, slope = 1, lty = 2) +
+  scale_y_continuous("metapopulation size (patch model)", limits = c(80, 420)) +
+  scale_x_continuous("observed mean metapopulation size", limits = c(80, 420)) +
   cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")+
-  theme(legend.title=element_blank())
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.title = element_blank())
 
 (pA | pB) & plot_annotation(tag_levels = "A")
 ```
@@ -428,7 +444,7 @@ An individual is born in the same patch as its parent. Parameters are fixed for 
 ## Results and interpretation
 
 ```{r import-simulation-output}
-sim_mortality <- read_csv(here("simulations_output","tetranychus-metapop-2019-sims-disp-mortality.csv"))
+sim_mortality <- read_csv(here("simulations_output", "tetranychus-metapop-2019-sims-disp-mortality.csv"))
 
 # one row = the summarised outcome of one simulation run
 # alphavar, betavar, betavar_, and gammavar: variabilities following Wang and Loreau 2014
@@ -439,47 +455,51 @@ sim_mortality <- read_csv(here("simulations_output","tetranychus-metapop-2019-si
 ```
 
 ```{r making-s5-plot}
-A1 <- ggplot(sim_mortality,aes(x=disp_mort,y=alphavar))+
-  geom_point(size=2,col="grey80")+
-  geom_smooth(method="gam",col="black")+
+A1 <- ggplot(sim_mortality, aes(x = disp_mort, y = alphavar)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
   scale_y_continuous(expression(paste(alpha, " variability")),
-                     lim=c(0.01,0.025))+
+    lim = c(0.01, 0.025)
+  ) +
   scale_x_continuous("")
 
-B1 <- ggplot(sim_mortality,aes(x=disp_mort,y=1/betavar_))+
-  geom_point(size=2,col="grey80")+
-  geom_smooth(method="gam",col="black")+
-  scale_y_continuous(expression(paste("Spatial synchrony (", phi1, " = ", 1/beta,")")),
-                     lim=c(0.05,0.25))+
+B1 <- ggplot(sim_mortality, aes(x = disp_mort, y = 1 / betavar_)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste("Spatial synchrony (", phi1, " = ", 1 / beta, ")")),
+    lim = c(0.05, 0.25)
+  ) +
   scale_x_continuous("")
 
-C1 <- ggplot(sim_mortality,aes(x=disp_mort,y=gammavar))+
-  geom_point(size=2,col="grey80")+
-  geom_smooth(method="gam",col="black")+
+C1 <- ggplot(sim_mortality, aes(x = disp_mort, y = gammavar)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
   scale_y_continuous(expression(paste(gamma, " variability")),
-                     lim=c(0.001,0.0055))+
+    lim = c(0.001, 0.0055)
+  ) +
   scale_x_continuous("Dispersal cost (mortality)")
 
-D1 <- sim_mortality %>% 
-  select(-c(`alphavar corner`,`alphavar center`,`alphavar side`)) %>% 
-  pivot_longer(cols = c(`size corner`,`size center`,`size side`)) %>%  
-  mutate(`local connectedness`=fct_recode(factor(name),
-                                          `center (high)` = "size center", 
-                                          `side (medium)` = "size side", 
-                                          `corner (low)`= "size corner")) %>% 
-  mutate(`local connectedness` = fct_relevel(`local connectedness`, "center (high)", after=Inf)) %>% 
-  ggplot()+
-  geom_point(aes(x=disp_mort,y=value,col=`local connectedness`),size=2,alpha=0.05)+
-  geom_smooth(aes(x=disp_mort,y=value,col=`local connectedness`),method="gam")+
-  scale_colour_manual(values=c("#e66101", "#fdb863", "#5e3c99"))+
+D1 <- sim_mortality %>%
+  select(-c(`alphavar corner`, `alphavar center`, `alphavar side`)) %>%
+  pivot_longer(cols = c(`size corner`, `size center`, `size side`)) %>%
+  mutate(`local connectedness` = fct_recode(factor(name),
+    `center (high)` = "size center",
+    `side (medium)` = "size side",
+    `corner (low)` = "size corner"
+  )) %>%
+  mutate(`local connectedness` = fct_relevel(`local connectedness`, "center (high)", after = Inf)) %>%
+  ggplot() +
+  geom_point(aes(x = disp_mort, y = value, col = `local connectedness`), size = 2, alpha = 0.05) +
+  geom_smooth(aes(x = disp_mort, y = value, col = `local connectedness`), method = "gam") +
+  scale_colour_manual(values = c("#e66101", "#fdb863", "#5e3c99")) +
   scale_y_continuous("mean local population size",
-                     lim=c(20,150))+
+    lim = c(20, 150)
+  ) +
   scale_x_continuous("Dispersal cost (mortality)")
-
 ```
 
 ```{r displaying-s5-plot, fig.width=8, fig.height=5}
-(A1|B1)/(C1|D1)  &
+(A1 | B1) / (C1 | D1) &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
