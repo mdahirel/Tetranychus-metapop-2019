@@ -691,7 +691,7 @@ write_csv(x = P_tab_plots, file = here("R_output", "P_tab.csv"))
 ```
 
 
-# Part 4- Figures and comparisons [BIG WORK IN PROGRESS]
+# Part 4- Figures and comparisons
 
 ## Data preparation
 
