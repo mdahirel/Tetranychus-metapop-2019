@@ -6,6 +6,10 @@ editor_options:
   chunk_output_type: console
 bibliography: tetranychus-metapop-2019-refs.bib
 csl: the-american-naturalist.csl
+header-includes:
+  - \usepackage[left]{lineno}
+  - \linenumbers
+  - \renewcommand\linenumberfont{\normalfont\bfseries\small}
 ---
 
 ```{r setup, include=FALSE}
