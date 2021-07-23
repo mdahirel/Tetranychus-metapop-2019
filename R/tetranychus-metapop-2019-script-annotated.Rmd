@@ -833,12 +833,22 @@ We can then compare the posteriors for each subplot, to see how they are differe
 ```{r pairwise_comp_fig1}
 
 ### pairwise for randomization
-P_tab_fig1a %>%
-  compare_levels(variable = mean, by = SHUFFLE, fun = `/`) %>%
+pairwise1SHUFFLE <- P_tab_fig1a %>%
+  compare_levels(variable = mean, by = SHUFFLE, fun = `/`) 
+
+pairwise1SHUFFLE %>%
   mean_hdi()
 
+pair1a <- pairwise1SHUFFLE %>% 
+  ggplot() + 
+  stat_eye(aes(mean,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("")+
+  scale_y_discrete("")
+
 ### pairwise for metapopulation connectedness
-P_tab_fig1b %>%
+pairwise1LENGTH <- P_tab_fig1b %>%
   compare_levels(
     variable = mean, by = LENGTH, fun = `/`,
     comparison = list(
@@ -848,11 +858,21 @@ P_tab_fig1b %>%
       c("16 cm (low)", "8 cm (medium)"),
       c("8 cm (medium)", "4 cm (high)")
     )
-  ) %>%
+  ) 
+
+pairwise1LENGTH %>%
   mean_hdi()
 
+pair1b <- pairwise1LENGTH %>% 
+  ggplot() + 
+  stat_eye(aes(mean,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("")+
+  scale_y_discrete("comparison")
+
 ### pairwise for local connectedness
-P_tab_fig1c %>%
+pairwise1local <- P_tab_fig1c %>%
   compare_levels(
     variable = mean, by = local_connectedness, fun = `/`,
     comparison = list(
@@ -862,8 +882,21 @@ P_tab_fig1c %>%
       c("corner (low)", "side (medium)"),
       c("side (medium)", "center (high)")
     )
-  ) %>%
+  ) 
+
+pairwise1local %>%
   mean_hdi()
+
+pair1c <- pairwise1local %>% 
+  ggplot() + 
+  stat_eye(aes(mean,local_connectedness),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean population sizes")+
+  scale_y_discrete("")
+
+(pair1a/pair1b/pair1c) &
+  coord_cartesian(xlim=c(0.75,1.35))
 ```
 
 ## Metapopulation variability metrics
@@ -1071,24 +1104,63 @@ fig2_uneven_b <- ggplot(P_tab_fig2_length) +
 ### Pairwise comparisons
 
 ```{r pairwise_comp_fig2}
-P_tab_fig2_shuffle %>%
-  compare_levels(variable = mean_alpha, by = SHUFFLE, fun = `/`) %>%
+pairwise2alpha_shuffle <- P_tab_fig2_shuffle %>%
+  compare_levels(variable = mean_alpha, by = SHUFFLE, fun = `/`) 
+
+pairwise2alpha_shuffle %>%
   mean_hdi()
 
-P_tab_fig2_shuffle %>%
-  compare_levels(variable = mean_phi, by = SHUFFLE, fun = `/`) %>%
+pair2alpha_a <- pairwise2alpha_shuffle %>% 
+  ggplot() + 
+  stat_eye(aes(mean_alpha,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("")+
+  scale_y_discrete("comparison")
+
+pairwise2phi_shuffle <- P_tab_fig2_shuffle %>%
+  compare_levels(variable = mean_phi, by = SHUFFLE, fun = `/`) 
+
+pairwise2phi_shuffle %>%
   mean_hdi()
 
-P_tab_fig2_shuffle %>%
-  compare_levels(variable = mean_gamma, by = SHUFFLE, fun = `/`) %>%
+pair2phi_a <- pairwise2phi_shuffle %>% 
+  ggplot() + 
+  stat_eye(aes(mean_phi,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("")+
+  scale_y_discrete("comparison")
+
+pairwise2gamma_shuffle <- P_tab_fig2_shuffle %>%
+  compare_levels(variable = mean_gamma, by = SHUFFLE, fun = `/`) 
+
+pairwise2gamma_shuffle %>%
   mean_hdi()
 
-P_tab_fig2_shuffle %>%
-  compare_levels(variable = mean_uneven, by = SHUFFLE, fun = `/`) %>%
+pair2gamma_a <- pairwise2gamma_shuffle %>% 
+  ggplot() + 
+  stat_eye(aes(mean_gamma,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("")+
+  scale_y_discrete("comparison")
+
+pairwise2uneven_shuffle <- P_tab_fig2_shuffle %>%
+  compare_levels(variable = mean_uneven, by = SHUFFLE, fun = `/`) 
+
+pairwise2uneven_shuffle %>%
   mean_hdi()
 
+pair2uneven_a <- pairwise2uneven_shuffle %>% 
+  ggplot() + 
+  stat_eye(aes(mean_uneven,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("")+
+  scale_y_discrete("comparison")
 
-P_tab_fig2_length %>%
+pairwise2alpha_length <- P_tab_fig2_length %>%
   compare_levels(
     variable = mean_alpha, by = LENGTH, fun = `/`,
     comparison = list(
@@ -1098,10 +1170,20 @@ P_tab_fig2_length %>%
       c("16 cm (low)", "8 cm (medium)"),
       c("8 cm (medium)", "4 cm (high)")
     )
-  ) %>%
+  ) 
+
+pairwise2alpha_length %>%
   mean_hdi()
 
-P_tab_fig2_length %>%
+pair2alpha_b <- pairwise2alpha_length %>% 
+  ggplot() + 
+  stat_eye(aes(mean_alpha,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean alphas")+
+  scale_y_discrete("comparison")
+
+pairwise2phi_length <- P_tab_fig2_length %>%
   compare_levels(
     variable = mean_phi, by = LENGTH, fun = `/`,
     comparison = list(
@@ -1111,10 +1193,20 @@ P_tab_fig2_length %>%
       c("16 cm (low)", "8 cm (medium)"),
       c("8 cm (medium)", "4 cm (high)")
     )
-  ) %>%
+  ) 
+
+pairwise2phi_length %>%
   mean_hdi()
 
-P_tab_fig2_length %>%
+pair2phi_b <- pairwise2phi_length %>% 
+  ggplot() + 
+  stat_eye(aes(mean_phi,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean phis")+
+  scale_y_discrete("comparison")
+
+pairwise2gamma_length <- P_tab_fig2_length %>%
   compare_levels(
     variable = mean_gamma, by = LENGTH, fun = `/`,
     comparison = list(
@@ -1124,10 +1216,20 @@ P_tab_fig2_length %>%
       c("16 cm (low)", "8 cm (medium)"),
       c("8 cm (medium)", "4 cm (high)")
     )
-  ) %>%
+  ) 
+
+pairwise2gamma_length %>%
   mean_hdi()
 
-P_tab_fig2_length %>%
+pair2gamma_b <- pairwise2gamma_length %>% 
+  ggplot() + 
+  stat_eye(aes(mean_gamma,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean gammas")+
+  scale_y_discrete("comparison")
+
+pairwise2uneven_length <- P_tab_fig2_length %>%
   compare_levels(
     variable = mean_uneven, by = LENGTH, fun = `/`,
     comparison = list(
@@ -1137,8 +1239,24 @@ P_tab_fig2_length %>%
       c("16 cm (low)", "8 cm (medium)"),
       c("8 cm (medium)", "4 cm (high)")
     )
-  ) %>%
+  ) 
+
+pairwise2uneven_length %>%
   mean_hdi()
+
+pair2uneven_b <- pairwise2uneven_length %>% 
+  ggplot() + 
+  stat_eye(aes(mean_uneven,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean unevens")+
+  scale_y_discrete("comparison")
+
+
+(pair2alpha_a/pair2alpha_b) & coord_cartesian(xlim=c(0.6,1.4))
+(pair2phi_a/pair2phi_b) & coord_cartesian(xlim=c(0.6,1.4))
+(pair2gamma_a/pair2gamma_b) & coord_cartesian(xlim=c(0.6,1.5))
+(pair2uneven_a/pair2uneven_b) & coord_cartesian(xlim=c(0,4))
 ```
 
 ## Patch-level means, interactive effects
@@ -1239,6 +1357,18 @@ P_tab_fig3a %>%
   compare_levels(variable = mean, by = SHUFFLE, fun = `/`) %>%
   mean_hdi()
 
+P_tab_fig3a %>% 
+  mutate(group=paste(LENGTH, SHUFFLE)) %>% 
+  compare_levels(variable = mean, by = group, fun = `/`) %>%
+  ggplot() + 
+  stat_eye(aes(mean,group),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean population sizes")+
+  scale_y_discrete("comparison")
+
+
+
 P_tab_fig3b %>%
   group_by(SHUFFLE) %>%
   compare_levels(
@@ -1257,7 +1387,58 @@ P_tab_fig3b %>%
   group_by(local_connectedness) %>%
   compare_levels(variable = mean, by = SHUFFLE, fun = `/`) %>%
   mean_hdi()
+
+P_tab_fig3b %>% 
+  mutate(group=paste(local_connectedness, SHUFFLE)) %>% 
+  compare_levels(variable = mean, by = group, fun = `/`) %>%
+  ggplot() + 
+  stat_eye(aes(mean,group),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean population sizes")+
+  scale_y_discrete("comparison")
 ```
+
+# Some stuff to prepare for the revisions/ the supplementary
+
+## let's check if metapops are at equilibrium
+
+```{r}
+M_formula_cont <- bf(
+  METAPOPSUM ~ 0 + METAPOP_ID + METAPOP_ID:scale(WEEK),
+  nlf(shape ~ 1 / exp(loginvshape)),
+  ## we fit the model on the inverse of shape
+  ## (avoid assuming a priori that very large overdispersions _ low values of shape _ are more likely)
+  ## and we need a log transformation to keep things >0
+  loginvshape ~ 0+METAPOP_ID,
+  family = negbinomial(link_shape = "identity")
+) # the transformation link is already "included" in the code just above
+
+M_prior_cont <- c(
+  ### PRIORS FOR THE METAPOP LEVEL MODEL
+  set_prior("normal(0,1)",class="b"),
+  set_prior("normal(5,1)",class="b",coef=paste("METAPOP_ID",unique(M_data$METAPOP_ID),sep="")),
+  set_prior("normal(0,1)", class = "b", nlpar = c("loginvshape"))
+)
+
+M_mod_cont <- brm(
+     formula = M_formula_cont, prior = M_prior_cont, data = M_data,
+     iter = N_iter, warmup = N_warmup, chains = N_chains, seed = 42,
+     control = list(adapt_delta = 0.9),
+     backend = "cmdstanr"
+   )
+
+M_data %>% 
+  add_fitted_draws(M_mod_cont) %>% 
+  ggplot()+
+  stat_lineribbon(aes(WEEK,.value),.width=c(0.01,0.95),col="grey")+
+  geom_line(data=M_data,
+            aes(WEEK,METAPOPSUM,group=METAPOP_ID))+facet_wrap(~METAPOP_ID)
+```
+
+# now let's do pairwise comparison plots
+
+see above for now, will update after validated
 
 # References
 
