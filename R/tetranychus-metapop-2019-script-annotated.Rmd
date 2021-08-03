@@ -910,7 +910,7 @@ P_tab_fig2_shuffle <- P_tab_plots %>%
     mean_alpha = mean(P_alpha),
     mean_phi = mean(P_phi),
     mean_gamma = mean(P_gamma),
-    mean_uneven = mean(P_uneven)
+    mean_beta2 = mean(P_beta2)
   ) %>%
   ungroup()
 
@@ -920,7 +920,7 @@ P_tab_fig2_length <- P_tab_plots %>%
     mean_alpha = mean(P_alpha),
     mean_phi = mean(P_phi),
     mean_gamma = mean(P_gamma),
-    mean_uneven = mean(P_uneven)
+    mean_beta2 = mean(P_beta2)
   ) %>%
   ungroup()
 
@@ -935,7 +935,7 @@ P_tab_fig2_length_noshuffle <- P_tab_plots %>%
     mean_alpha = mean(P_alpha),
     mean_phi = mean(P_phi),
     mean_gamma = mean(P_gamma),
-    mean_uneven = mean(P_uneven)
+    mean_beta2 = mean(P_beta2)
   ) %>%
   ungroup()
 ```
@@ -1012,7 +1012,7 @@ fig2_phi_b <- ggplot(P_tab_fig2_length) +
     point_interval = mean_hdi
   ) +
   scale_fill_manual(values = paletteLENGTH) +
-  scale_x_continuous(expression(paste("mean spatial synchrony (", phi1, " = ", 1 / beta, ")"))) + # phi1 to get the cursive
+  scale_x_continuous(expression(paste("mean spatial synchrony ", phi1))) + # phi1 to get the cursive
   scale_y_discrete("") +
   coord_cartesian(xlim = c(0.20, 0.35))
 
@@ -1052,17 +1052,17 @@ fig2_gamma_b <- ggplot(P_tab_fig2_length) +
   scale_y_discrete("") +
   coord_cartesian(xlim = c(0.15, 0.45))
 
-fig2_uneven_a <- ggplot(P_tab_fig2_shuffle) +
-  stat_halfeye(aes(x = mean_uneven, y = SHUFFLE, fill = SHUFFLE),
+fig2_beta2_a <- ggplot(P_tab_fig2_shuffle) +
+  stat_halfeye(aes(x = mean_beta2, y = SHUFFLE, fill = SHUFFLE),
     orientation = "horizontal",
     .width = c(0.01, 0.95), slab_alpha = 0.7,
     point_interval = mean_hdi
   ) +
   scale_x_continuous("") +
   scale_y_discrete("") +
-  coord_cartesian(xlim = c(0, 1.5))
+  coord_cartesian(xlim = c(0.5, 1))
 
-fig2_uneven_b <- ggplot(P_tab_fig2_length) +
+fig2_beta2_b <- ggplot(P_tab_fig2_length) +
   ## line version of the "ghost"
   # stat_slab(data=P_tab_fig2_length_noshuffle,
   #             aes(x=mean_uneven,y=LENGTH),
@@ -1072,26 +1072,26 @@ fig2_uneven_b <- ggplot(P_tab_fig2_length) +
   # filled version
   stat_halfeye(
     data = P_tab_fig2_length_noshuffle,
-    aes(x = mean_uneven, y = LENGTH),
+    aes(x = mean_beta2, y = LENGTH),
     orientation = "horizontal",
     slab_alpha = 0.3,
     point_interval = NULL
   ) +
   # actual posterior
-  stat_halfeye(aes(x = mean_uneven, y = LENGTH, fill = LENGTH),
+  stat_halfeye(aes(x = mean_beta2, y = LENGTH, fill = LENGTH),
     orientation = "horizontal",
     .width = c(0.01, 0.95), slab_alpha = 0.7,
     point_interval = mean_hdi
   ) +
   scale_fill_manual(values = paletteLENGTH) +
-  scale_x_continuous("mean spatial unevenness") +
+  scale_x_continuous(expression(paste("mean additive spatial variability ", beta[2]))) +
   scale_y_discrete("") +
-  coord_cartesian(xlim = c(0, 1.5))
+  coord_cartesian(xlim = c(0.5, 1))
 
 ((fig2_alpha_a / fig2_alpha_b) |
+  (fig2_beta2_a / fig2_beta2_b)|
   (fig2_phi_a / fig2_phi_b) |
-  (fig2_gamma_a / fig2_gamma_b) |
-  (fig2_uneven_a / fig2_uneven_b)) &
+  (fig2_gamma_a / fig2_gamma_b) ) &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(
     colour.major = "grey95",
@@ -1146,15 +1146,15 @@ pair2gamma_a <- pairwise2gamma_shuffle %>%
   scale_x_continuous("")+
   scale_y_discrete("comparison")
 
-pairwise2uneven_shuffle <- P_tab_fig2_shuffle %>%
-  compare_levels(variable = mean_uneven, by = SHUFFLE, fun = `/`) 
+pairwise2beta2_shuffle <- P_tab_fig2_shuffle %>%
+  compare_levels(variable = mean_beta2, by = SHUFFLE, fun = `/`) 
 
-pairwise2uneven_shuffle %>%
+pairwise2beta2_shuffle %>%
   mean_hdi()
 
-pair2uneven_a <- pairwise2uneven_shuffle %>% 
+pair2beta2_a <- pairwise2beta2_shuffle %>% 
   ggplot() + 
-  stat_eye(aes(mean_uneven,SHUFFLE),.width=c(0.01,0.95),
+  stat_eye(aes(mean_beta2,SHUFFLE),.width=c(0.01,0.95),
            point_interval=mean_hdi)+
   geom_vline(xintercept = 1)+
   scale_x_continuous("")+
@@ -1229,9 +1229,9 @@ pair2gamma_b <- pairwise2gamma_length %>%
   scale_x_continuous("posterior ratio of mean gammas")+
   scale_y_discrete("comparison")
 
-pairwise2uneven_length <- P_tab_fig2_length %>%
+pairwise2beta2_length <- P_tab_fig2_length %>%
   compare_levels(
-    variable = mean_uneven, by = LENGTH, fun = `/`,
+    variable = mean_beta2, by = LENGTH, fun = `/`,
     comparison = list(
       # we give the comparison list explicitly since by default it will give 4cm/16cm
       # and we'd rather present the reverse
@@ -1241,12 +1241,12 @@ pairwise2uneven_length <- P_tab_fig2_length %>%
     )
   ) 
 
-pairwise2uneven_length %>%
+pairwise2beta2_length %>%
   mean_hdi()
 
-pair2uneven_b <- pairwise2uneven_length %>% 
+pair2beta2_b <- pairwise2beta2_length %>% 
   ggplot() + 
-  stat_eye(aes(mean_uneven,LENGTH),.width=c(0.01,0.95),
+  stat_eye(aes(mean_beta2,LENGTH),.width=c(0.01,0.95),
            point_interval=mean_hdi)+
   geom_vline(xintercept = 1)+
   scale_x_continuous("posterior ratio of mean unevens")+
@@ -1256,7 +1256,7 @@ pair2uneven_b <- pairwise2uneven_length %>%
 (pair2alpha_a/pair2alpha_b) & coord_cartesian(xlim=c(0.6,1.4))
 (pair2phi_a/pair2phi_b) & coord_cartesian(xlim=c(0.6,1.4))
 (pair2gamma_a/pair2gamma_b) & coord_cartesian(xlim=c(0.6,1.5))
-(pair2uneven_a/pair2uneven_b) & coord_cartesian(xlim=c(0,4))
+(pair2beta2_a/pair2beta2_b) & coord_cartesian(xlim=c(0.5,1.5))
 ```
 
 ## Patch-level means, interactive effects
@@ -1405,7 +1405,7 @@ P_tab_fig3b %>%
 
 ```{r}
 M_formula_cont <- bf(
-  METAPOPSUM ~ 0 + METAPOP_ID + METAPOP_ID:scale(WEEK),
+  METAPOPSUM ~ 0 + METAPOP_ID + METAPOP_ID:scale(WEEK),# + ar(time=WEEK, gr=METAPOP_ID),
   nlf(shape ~ 1 / exp(loginvshape)),
   ## we fit the model on the inverse of shape
   ## (avoid assuming a priori that very large overdispersions _ low values of shape _ are more likely)

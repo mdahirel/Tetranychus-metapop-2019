@@ -469,15 +469,15 @@ A1 <- ggplot(sim_mortality, aes(x = disp_mort, y = alphavar)) +
   scale_y_continuous(expression(paste(alpha, " variability")),
     lim = c(0.01, 0.025)
   ) +
-  scale_x_continuous("")
+  scale_x_continuous("Dispersal cost (mortality)")
 
 B1 <- ggplot(sim_mortality, aes(x = disp_mort, y = 1 / betavar_)) +
   geom_point(size = 2, col = "grey80") +
   geom_smooth(method = "gam", col = "black") +
-  scale_y_continuous(expression(paste("Spatial synchrony (", phi1, " = ", 1 / beta, ")")),
+  scale_y_continuous(expression(paste("Spatial synchrony  ", phi1)),
     lim = c(0.05, 0.25)
   ) +
-  scale_x_continuous("")
+  scale_x_continuous("Dispersal cost (mortality)")
 
 C1 <- ggplot(sim_mortality, aes(x = disp_mort, y = gammavar)) +
   geom_point(size = 2, col = "grey80") +
@@ -502,6 +502,15 @@ D1 <- sim_mortality %>%
   scale_colour_manual(values = c("#e66101", "#fdb863", "#5e3c99")) +
   scale_y_continuous("mean local population size",
     lim = c(20, 150)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+
+
+E1 <- ggplot(sim_mortality, aes(x = disp_mort, y = betavar)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste("Additive spatial variability   ", beta[2])),
+    lim = c(0.005, 0.025)
   ) +
   scale_x_continuous("Dispersal cost (mortality)")
 ```
