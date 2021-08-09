@@ -368,22 +368,24 @@ You can see below that we are estimating a separate temporal variance-covariance
 The intuition behind this formulation (latent residuals via OLRE + specified covariance structure) is the same
 as in this comment by Paul Bürkner on the brms R package development page (https://github.com/paul-buerkner/brms/issues/600#issuecomment-511677732).
 
+The model is *de facto* a multivariate model, with a separate response for each $x,y$ combination. However, it can just as easily be rewritten as an univariate model for fitting purposes, without changing anything to the multivariate nature of the underlying model (in particular, the among-patches temporal correlations are preserved). The univariate re-formulation makes it easier for some packages to estimate some parameters (here the fixed effects ones); this formulation is the one we provide below.
+
 The formula for the model for the number of adult females $N_{i,x,y,t}$ in metapopulation $i$, in the patch of coordinates $x,y$ at time $t$ is
 
 $$
 N_{[i,x,y,t]} \sim  {\textrm{Poisson}}(\lambda_{[i,x,y,t]}),
 $$
 $$
-\log(\lambda_{[i,x,y,t]}) = \beta_{0} + \sum_{j=1}^J({\beta_{j} \times x_{j[i,x,y]}}) + \alpha_{[i]} + \gamma_{[i,x,y]} + \eta_{[i,x,y,t]},
+\log(\lambda_{[i,x,y,t]}) = B_{0} + \sum_{j=1}^J({B_{j} \times x_{j[i,x,y]}}) + a_{[i]} + c_{[i,x,y]} + d_{[i,x,y,t]},
 $$
 $$
-\alpha_{[i]} \sim \mathrm{Normal}(0, \sigma_{\alpha}),
+a_{[i]} \sim \mathrm{Normal}(0, \sigma_{a}),
 $$
 $$
-\gamma_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{\eta}),
+c_{[i,x,y]} \sim \mathrm{Normal}(0, \sigma_{c}),
 $$
 $$
-\begin{bmatrix} \eta_{[i,1,1,t]} \\ ... \\ \eta_{[i,3,3,t]} \end{bmatrix} 
+\begin{bmatrix} d_{[i,1,1,t]} \\ ... \\ d_{[i,3,3,t]} \end{bmatrix} 
 \sim 
 \textrm{MVNormal}
 \begin{pmatrix}
@@ -394,15 +396,23 @@ $$
 $$
 \boldsymbol{\Omega}_{[i]} = 
 \begin{bmatrix}
-\sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
+\sigma_{d[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{d[i,3,3]} 
 \end{bmatrix}
 \boldsymbol{R}_{[i]}
 \begin{bmatrix}
-\sigma_{\eta[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{\eta[i,3,3]} 
+\sigma_{d[i,1,1]} & 0 & ... \\ 0 & \ddots  \\ \vdots & & \sigma_{d[i,3,3]} 
 \end{bmatrix},
 $$
 
-where $\beta$ are the fixed effects (with $\beta_{0}$ the intercept), $\alpha$ are replicate/metapopulation random effects, $\gamma$ patch-level random effects, and $\eta$ temporal abundance fluctuations (not to be confused with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following @schielzethSimpleMeansImprove2010, this has the added benefit of making $\beta_{0}$ the intercept of the "average" treatment.
+where $B_j$ are the fixed effects (with $B_{0}$ the intercept), $a$ are replicate/metapopulation random effects, $c$ patch-level random effects, and $d$ temporal abundance fluctuations (We use Latin letters here, rather than the usual Greek script, to avoid confusion with $\alpha$, $\beta$, $\gamma$ variabilities). $\boldsymbol{\Omega}_{[i]}$ is the temporal covariance matrix for the replicate $i$ and $\boldsymbol{R}_{[i]}$ the corresponding correlation matrix. For implementation, we transform the treatment covariates into dummy centred variables following @schielzethSimpleMeansImprove2010, this has the added benefit of making $B_{0}$ the intercept of the "average" treatment.
+
+All key metrics of interest in the present paper can be derived from this model:
+
+- the mean local population size of the patch $x,y$ in metapopulation $i$ is $\mu_{i,x,y}=\exp(B_{0} + \sum_{j=1}^J({B_{j} \times x_{j[i,x,y]}}) + a_{[i]} + c_{[i,x,y]}+ \frac{\sigma_{d[i,x,y]}^2}{2})$, i.e. the back-transformed sum of the patch-level latent mean and half the within-patch latent variance [based on the formula for the mean of the log-normal distribution; see also @villemereuilGeneralMethodsEvolutionary2016]. Note that because the observed-scale mean depends on both the latent scale mean and the latent scale within-patch variance, and because our model allows both to vary between treatments, one cannot make inferences about treatment effects on means based on fixed effects alone;
+
+- the observed-scale temporal variances and covariances $w$ (to use the syntax in main text **Table 1**) can be derived from the latent scale patch-level means ($B_{0} + \sum_{j=1}^J({B_{j} \times x_{j[i,x,y]}}) + a_{[i]} + c_{[i,x,y]}$) and latent scale within-patch variances ($\sigma_{d[i,x,y]}^2$) using the procedures detailed in @villemereuilGeneralMethodsEvolutionary2016;
+
+-  $\alpha$, $\beta_{2}$, $\varphi$ and $\gamma$ can be estimated for each metapopulation as outlined in main text **Table 1** once one has all the $\mu$ and $w$ corresponding to that metapopulation.
 
 ## Meta-population model
 
@@ -412,19 +422,19 @@ $$
 M_{[i,t]} \sim  {\textrm{NegBinomial}}(\lambda_{[i]}, \phi{[i]}),
 $$
 $$
-\log(\lambda_{[i]}) = \beta_{0} + \sum_{j=1}^J({\beta_{j} \times x_{j[i]}}) + \gamma_{[i]},
+\log(\lambda_{[i]}) = B_{0} + \sum_{j=1}^J({B_{j} \times x_{j[i]}}) + c_{[i]},
 $$
 $$
-\log(1/\phi_{[i]}) = \alpha_{0} + \sum_{j=1}^J({\alpha_{j} \times x_{j[i]}}) + \eta_{[i]},
+\log(1/\phi_{[i]}) = a_{0} + \sum_{j=1}^J({a_{j} \times x_{j[i]}}) + d_{[i]},
 $$
 $$
-\gamma_{[i]} \sim \mathrm{Normal}(0, \sigma_{\gamma}),
+c_{[i]} \sim \mathrm{Normal}(0, \sigma_{c}),
 $$
 $$
-\eta_{[i]} \sim \mathrm{Normal}(0, \sigma_{\eta}).
+d_{[i]} \sim \mathrm{Normal}(0, \sigma_{d}).
 $$  
 
-Here $\gamma$ and $\eta$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similarly, $\beta$ and $\alpha$ refer to the fixed effects coefficients for the mean and the shape. We fit the model for the overdispersion parameter on its log-transformed inverse: the inverse transformation (as suggested in the Stan language wiki: https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations) is used to avoid giving too much prior weight to high overdispersion, the log transformation to keep $\phi$ estimates > 0.
+Here $c$ and $d$ refer to the metapopulation-level random effects, for the mean parameter and for the shape parameter, respectively. Similarly, $B$ and $a$ refer to the fixed effects coefficients for the mean and the shape. We fit the model for the overdispersion parameter on its log-transformed inverse: the inverse transformation (as suggested in the Stan language wiki: https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations) is used to avoid giving too much prior weight to high overdispersion, the log transformation to keep $\phi$ estimates > 0.
 
 ## Rationale behind priors
 
@@ -437,9 +447,9 @@ In the metapopulation-level model, we replaced the prior for $\beta_{0}$ by $\ma
 
 # S06 -- Posterior pairwise comparisons
 
-The following plots describe the outcome of posterior pairwise comparisons between treatments, regarding local population sizes (**Fig. S06-1** and **S06-2**, match with main text **Figs 1-2**) and variability metrics (**Fig. S06-3** and **S06-4**, matches with main text **Fig. 4**). In all cases, comparisons are ratios, and dots and segments represent the posterior mean and 95% Highest Density Interval.
+The following plots describe the outcome of posterior pairwise comparisons between treatments, regarding local population sizes (**Figs S06-1** to **S06-3**, match with main text **Figs 1-2**) and variability metrics (**Figs S06-4** and **S06-5**, match with main text **Fig. 4**). In all cases, comparisons are ratios, and dots and segments represent the posterior mean and 95% Highest Density Interval.
 
-```{r pairwise_comp_fig1, fig.width=5, fig.height=7}
+```{r fig-s06-1, fig.width=5, fig.height=7}
 load(here("R_output","pairwise_posteriors_popsize1.Rdata"))
 
 pair1a <- pairwise1SHUFFLE %>% 
@@ -475,15 +485,129 @@ pair1c <- pairwise1local %>%
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
 
-**Figure S06.1** -- Effects of connectedness and randomization on local population size. For each treatment variable the effects of the others are pooled.
+**Figure S06.1** -- Additive effects of connectedness and randomization on local population size. For each treatment variable the effects of the others are pooled.
+
+```{r fig-s06-2}
+load(here("R_output","pairwise_posteriors_popsize2.Rdata"))
+
+P_tab_fig2a %>% 
+  mutate(group=paste(LENGTH, SHUFFLE)) %>% 
+  compare_levels(variable = mean, by = group, fun = `/`) %>%
+  ggplot() + 
+  stat_eye(aes(mean,group),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean population sizes")+
+  scale_y_discrete("comparison") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
+
+**Figure S06.2** -- Combined effects of metapopulation-level connectedness and randomization on local population size.
+
+```{r fig-s06-3}
+P_tab_fig2b %>% 
+  mutate(group=paste(local_connectedness, SHUFFLE)) %>% 
+  compare_levels(variable = mean, by = group, fun = `/`) %>%
+  ggplot() + 
+  stat_eye(aes(mean,group),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean population sizes")+
+  scale_y_discrete("comparison") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
+
+**Figure S06.3** -- Combined effects of local connectedness and randomization on local population size.
+
+```{r fig-s06-4, fig.width=5, fig.height=7}
+load(here("R_output","pairwise_posteriors_variabilities.Rdata"))
+
+pair2alpha_a <- pairwise2alpha_shuffle %>% 
+  ggplot() + 
+  stat_eye(aes(mean_alpha,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous(expression(paste("posterior ratio between mean ", alpha)))+
+  scale_y_discrete("")
+
+pair2phi_a <- pairwise2phi_shuffle %>% 
+  ggplot() + 
+  stat_eye(aes(mean_phi,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous(expression(paste("posterior ratio between mean ", phi1)))+
+  scale_y_discrete("")
+
+pair2gamma_a <- pairwise2gamma_shuffle %>% 
+  ggplot() + 
+  stat_eye(aes(mean_gamma,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous(expression(paste("posterior ratio between mean ", gamma)))+
+  scale_y_discrete("")
+
+pair2beta2_a <- pairwise2beta2_shuffle %>% 
+  ggplot() + 
+  stat_eye(aes(mean_beta2,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous(expression(paste("posterior ratio between mean ", beta[2])))+
+  scale_y_discrete("")
 
 
-**Figure S06.2** -- Effects of connectedness and randomization on local population size.
+(pair2alpha_a/pair2beta2_a/pair2phi_a/pair2gamma_a) & 
+  coord_cartesian(xlim=c(0.5,1.5)) &
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+
+```
+
+**Figure S06.4** -- Effect of randomization on variability metrics
+
+```{r fig-s06-5, fig.width=5, fig.height=8}
+
+pair2alpha_b <- pairwise2alpha_length %>% 
+  ggplot() + 
+  stat_eye(aes(mean_alpha,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous(expression(paste("posterior ratio between mean ", alpha)))+
+  scale_y_discrete("")
 
 
-**Figure S06.3** -- Effect of randomization on variability metrics
+pair2phi_b <- pairwise2phi_length %>% 
+  ggplot() + 
+  stat_eye(aes(mean_phi,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous(expression(paste("posterior ratio between mean ", phi1)))+
+  scale_y_discrete("")
 
-**Figure S06.4** -- Effect of landscape connectedness on veriability metrics
+pair2gamma_b <- pairwise2gamma_length %>% 
+  ggplot() + 
+  stat_eye(aes(mean_gamma,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous(expression(paste("posterior ratio between mean ", gamma)))+
+  scale_y_discrete("")
+
+pair2beta2_b <- pairwise2beta2_length %>% 
+  ggplot() + 
+  stat_eye(aes(mean_beta2,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous(expression(paste("posterior ratio between mean ", beta[2])))+
+  scale_y_discrete("")
+
+(pair2alpha_b/pair2beta2_b/pair2phi_b/pair2gamma_b) & 
+  coord_cartesian(xlim=c(0.6,1.4)) &
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
+
+**Figure S06.5** -- Effect of metapopulation-level connectedness on variability metrics
 
 # S07 -- Comparisons between patch-level model predictions, metapopulation-level model predictions, and observed data
 

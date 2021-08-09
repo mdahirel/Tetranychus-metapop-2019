@@ -975,6 +975,8 @@ fig2b <- ggplot(P_tab_fig2b) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
     theme(legend.position = "none") &
   coord_cartesian(xlim = c(5, 50))
+
+save(list=c("P_tab_fig2a","P_tab_fig2b"),file=here("R_output","pairwise_posteriors_popsize2.Rdata"))
 ```
 
 ### Pairwise comparisons
@@ -1455,6 +1457,16 @@ pair2beta2_b <- pairwise2beta2_length %>%
 (pair2phi_a/pair2phi_b) & coord_cartesian(xlim=c(0.6,1.4))
 (pair2gamma_a/pair2gamma_b) & coord_cartesian(xlim=c(0.6,1.5))
 (pair2beta2_a/pair2beta2_b) & coord_cartesian(xlim=c(0.5,1.5))
+
+save(list=c("pairwise2alpha_length",
+            "pairwise2beta2_length",
+            "pairwise2phi_length",
+            "pairwise2gamma_length",
+            "pairwise2alpha_shuffle",
+            "pairwise2beta2_shuffle",
+            "pairwise2phi_shuffle",
+            "pairwise2gamma_shuffle"),
+     file=here("R_output","pairwise_posteriors_variabilities.Rdata"))
 ```
 
 # References
