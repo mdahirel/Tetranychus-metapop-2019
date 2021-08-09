@@ -107,7 +107,258 @@ tibble(LENGTH = 4:32, Nstart = 10) %>%
 
 **Figure S02.1** -- Mortality rate as a function of bridge length during preliminary trials. Both observed values (dots) and posterior means with 95% credible band are plotted.
 
-# S03 -- Models description
+# S03 -- Stationarity in experimental metapopulations
+
+A key prerequisite to the use of the variability metrics in @wangEcosystemStabilitySpace2014 is stationarity. To check for stationarity in our metapopulations, we fit a negative binomial generalized linear model including metapopulation-specific intercepts and effects of time (priors are the same as for the negative binomial model described **Supplementary Material S05**). In the large majority of the metapopulations (21 out of 24), we find no evidence of deviations from stationarity (no temporal trend) during the experimental run (**Figure S03.1**).
+
+```{r data-load}
+raw_data <- read_csv(here("data", "tetranychus-metapop-2019-dataset.csv"))
+```
+
+```{r data-reshape}
+
+data_wide <- raw_data %>%
+  mutate(PATCH = paste("P", PATCH, sep = "")) %>%
+  mutate(PATCH = str_remove(PATCH, "[.]")) %>%
+  ### the two lines above make patches names easier to use as column names (letter as 1st character)
+  mutate(
+    LENGTH = fct_recode(factor(LENGTH),
+      `16 cm (low)` = "16",
+      `8 cm (medium)` = "8",
+      `4 cm (high)` = "4"
+    ),
+    SHUFFLE = fct_recode(as.factor(SHUFFLE),
+      `control` = "NO",
+      `randomized` = "R"
+    )
+  ) %>%
+  pivot_wider(names_from = PATCH, values_from = AFEMA) %>%
+  drop_na() # 3 out of ~550 rows contain NAs in at least one patch, discard
+
+```
+
+```{r data-patch}
+P_data <- data_wide %>%
+  pivot_longer(P11:P33, names_to = "PATCH", values_to = "AFEMA") %>%
+  mutate(local_connectedness = 1 + 1 * (PATCH %in% c("P12", "P21", "P23", "P32")) +
+    2 * (PATCH %in% c("P11", "P13", "P31", "P33"))) %>%
+  mutate(local_connectedness = fct_recode(factor(local_connectedness),
+    `center (high)` = "1",
+    `side (medium)` = "2",
+    `corner (low)` = "3"
+  ))
+
+## adding dummy centered variables
+P_data <- P_data %>%
+  mutate(is.randomized = as.numeric(SHUFFLE == "randomized") - mean(as.numeric(SHUFFLE == "randomized"))) %>%
+  mutate(
+    is.local5 = as.numeric(local_connectedness == "side (medium)") - mean(as.numeric(local_connectedness == "side (medium)")),
+    is.local3 = as.numeric(local_connectedness == "corner (low)") - mean(as.numeric(local_connectedness == "corner (low)")),
+    is.landscape8 = as.numeric(LENGTH == "8 cm (medium)") - mean(as.numeric(LENGTH == "8 cm (medium)")),
+    is.landscape16 = as.numeric(LENGTH == "16 cm (low)") - mean(as.numeric(LENGTH == "16 cm (low)"))
+  )
+```
+
+
+```{r data-metapop}
+M_data <- data_wide %>%
+  mutate(METAPOPSUM = select(., P11:P33) %>% rowSums()) %>%
+  select(METAPOP_ID, LENGTH, SHUFFLE, REPLICATE, WEEK, METAPOPSUM) %>%
+  mutate(LENGTH = factor(LENGTH))
+
+## adding dummy centered variables
+M_data <- M_data %>%
+  mutate(is.randomized = as.numeric(SHUFFLE == "randomized") - mean(as.numeric(SHUFFLE == "randomized"))) %>%
+  mutate(
+    is.landscape8 = as.numeric(LENGTH == "8 cm (medium)") - mean(as.numeric(LENGTH == "8 cm (medium)")),
+    is.landscape16 = as.numeric(LENGTH == "16 cm (low)") - mean(as.numeric(LENGTH == "16 cm (low)"))
+  )
+
+```
+
+```{r model-s03}
+if (file.exists(here("R_output", "supplementary_model_s03.Rdata"))) {
+  # this if-else statement is avoid re-fitting a model if there is already one existing in R_output
+  # to override, re-run the model and re-save manually by selecting only the relevant code lines (or delete the Rdata object before relaunching this code chunk)
+  load(here("R_output", "supplementary_model_s03.Rdata"))
+} else {
+  
+M_formula_cont <- bf(
+  METAPOPSUM ~ 0 + METAPOP_ID + METAPOP_ID:scale(WEEK),# + ar(time=WEEK, gr=METAPOP_ID),
+  nlf(shape ~ 1 / exp(loginvshape)),
+  ## we fit the model on the inverse of shape
+  ## (avoid assuming a priori that very large overdispersions _ low values of shape _ are more likely)
+  ## and we need a log transformation to keep things >0
+  loginvshape ~ 0+METAPOP_ID,
+  family = negbinomial(link_shape = "identity")
+) # the transformation link is already "included" in the code just above
+
+M_prior_cont <- c(
+  ### PRIORS FOR THE METAPOP LEVEL MODEL
+  set_prior("normal(0,1)",class="b"),
+  set_prior("normal(5,1)",class="b",coef=paste("METAPOP_ID",unique(M_data$METAPOP_ID),sep="")),
+  set_prior("normal(0,1)", class = "b", nlpar = c("loginvshape"))
+)
+
+M_mod_cont <- brm(
+     formula = M_formula_cont, prior = M_prior_cont, data = M_data,
+     iter = N_iter, warmup = N_warmup, chains = N_chains, seed = 42,
+     control = list(adapt_delta = 0.9),
+     backend = "cmdstanr"
+   )
+  save(list = c("M_mod_cont"), file = here("R_output", "supplementary_model_s03.Rdata"))
+}
+```
+
+
+```{r figure-s03-1, fig.width=6, fig.height=8}
+M_data %>% 
+  select(WEEK,METAPOP_ID) %>% 
+  distinct() %>% 
+  add_fitted_draws(M_mod_cont) %>% 
+  ggplot()+
+  stat_lineribbon(aes(WEEK,.value),.width=c(0.01,0.95),
+                  fill="grey",point_interval = mean_hdi)+
+  geom_line(data=M_data,
+            aes(WEEK,METAPOPSUM,group=METAPOP_ID))+facet_wrap(~METAPOP_ID)+
+  scale_x_continuous("weeks") +
+  scale_y_continuous("Number of adult females") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+  theme(legend.position = "none")
+```
+
+**Figure S03.1** -- Metapopulation sizes (number of adult females in all 9 patches of a metapopulation) as a function of time. Both observed values (thin lines) and the posterior means with 95% credible band are plotted. Each subplot represents a different replicate metapopulation.
+
+
+# S04 -- Simulation model description and interpretation
+
+We simulate the direct effect of connectedness on metapopulation variabilities to contrast with the observed dynamics in the experiment, in order to estimate direct ecological impact of the landscape composition in our experiment. We simulated metapopulations resembling our experimental systems, 3×3 connected patch network, in Python (3.8.5). We constructed an individual-based version of the classic metapopulation model in discrete generations. Individuals do not differ in traits within a simulation and we only simulate dispersal and reproduction. Evolution within a simulation is excluded.
+We analyzed different levels of dispersal mortality to simulate higher dispersal costs and analyze the direct effect of a lower connectedness in our metapopulations (see **Fig. S02.1**). We decided to use mortality as a super-parameter that encompasses both the direct (i.e. death during dispersal) and the deferred (i.e. reduced reproductive success due to energy expenditure) costs of the dispersal event [@bachKinCompetitionEvolution2006].
+
+## ODD description
+
+We describe here the individual-based model used in the main text, using the ODD (Overview, Design, Details) protocol [@grimmODDProtocolReview2010].
+
+### Purpose
+
+The model simulates identical individuals moving and reproducing in a network of nine habitat patches in order to generate metapopulation dynamics, and obtain information about $\alpha$-, $\beta$- and $\gamma$-variability following @wangEcosystemStabilitySpace2014. We simulate what metapopulation dynamics would emerge if a population of a certain phenotype moves as a metapopulation through a certain patchy landscape. Most notably, we simulate what dynamics would emerge independent of individual heterogeneity, density-dependent dispersal, or evolution. The network was simulated to resemble the structure of the metapopulation mesocosms in the main text.
+We then analyze what the effect of dispersal mortality (as a characteristic of the landscape) is on metapopulation dynamics.
+
+### State variables and scale
+
+The model simulates individuals as the smallest unit. Individuals only vary in their location in the landscape, which can change to represent movement. 
+They inhabit metapopulations, which is another modeled unit that represent both the landscape and characteristics of the population living in it. All metapopulation characteristics are fixed within a simulation. Dispersal mortality vary across simulations in the range [0.05, 0.80]. Each independent landscape contains nine patches arranged in a 3×3 square and connected following Moore neighborhood rules, with each habitat patch being of undefined size. Landscapes were run for 500 time steps with each time step being a discrete generation.
+
+### Process, overview and scheduling
+
+Each simulation, after initialization, runs through 500 time steps. Each time step is a discrete generation where individuals, in a random order, each run through their life cycle. A life cycle in the model starts with reproduction, which includes population regulation based on the local population size.  After that, the offspring disperses according to a certain propensity. Dispersal includes dispersal mortality and updates that offspring’s location ($x$- and $y$-coordinates) if it is successful. This means that dispersal happens before reproduction in the life of an individual (even if in the model’s definition of a life cycle, dispersal of the next generation is already modeled while the current one's runs). When all individuals went through their life cycle and died, local population sizes of the offspring are recorded for that generation.
+
+### Design concepts
+
+**Emergence**: the number and distribution of individuals emerges from movement according along the network and population regulation on reproduction and therefore local population sizes.
+
+**Interaction**: Individuals only interact with one another when in the same habitat patch by competing for local resources. This is included as a population regulating reaction norm that determines reproduction.
+
+**Stochasticity**: Stochasticity plays at many points in the model.  At initialization, individuals are randomly placed in one of the habitat patches to generate a random starting distribution. Each individual disperses with a probability according to the dispersal propensity. If it does, it dies with a probability according to the dispersal mortality. If it survives, it disperses to one of the possible destination according to the network with an equal probability for each destination. Each of these are individual events that collectively should result in a certain random portion of the individuals doing one option. An individual’s realized number of offspring is drawn from a Poisson distribution with the expected number of offspring as its mean. This simulates a certain variability in fitness and conveniently returns an integer from a decimal expected number of offspring. The sequence of individuals that run through their life cycle is randomly chosen each generation.
+
+**Observation**: Population sizes for each habitat patch is recorded at the end of each generation. From that we calculate metapopulation size for each generation, average metapopulation size, average local population size for each location in the network, $\alpha$-, $\beta$- and $\gamma$-variability, as well as spatial synchrony $\varphi$.
+
+**Scheduling**: Time is modeled in discrete time steps representing discrete generations. During each generation every individual runs through its life cycle before the next individual starts its life cycle. Earlier individuals do not change the environment in a way that would affect later individuals in the sequence.
+
+### Initialization
+
+At the start of a simulation, a metapopulation is initialized with parameters that will stay fixed for the duration of that simulation. The only parameter that varies among simulations is the dispersal mortality. Furthermore, the model initializes a population with half the metapopulation carrying capacity. This is half of nine times the carrying capacity of a patch or 450 ($K$ = 100, **Table S05.1**) individuals that are randomly allocated to one of the nine patches.
+
+### Input
+
+Each simulation receives a dispersal mortality ($m$) parameter that ranges from 0.05 to 0.8 in steps of 0.05 (**Table S05.1**). We choose not to simulate dispersal mortalities above 0.8 since that would simulate something closer to an unconnected network with a high mortality that are prone to population crashes. We replicate simulations of every input value twenty times.
+
+### Submodels
+
+**Reproduction** -- Each individual $i$ reproduces resulting in a number of offspring ($f_{i}$) which is drawn from a Poisson distribution:
+
+$$ f_{i} \sim \mathrm{Poisson}(\mu_{i}).$$
+
+$\mu$ is the expected number of offspring that is affected by the current number of adults, already produced offspring of that generation not included, according to Hassell’s population model:
+
+$$\mu_{i}= r \begin{pmatrix}\frac{1+N_{i}(r-1)}{a}\end{pmatrix}^b,$$
+
+with $r$ the optimal population growth parameter, $N_i$ the local population density experienced by individual $i$ (excluding newly generated offspring), $b$ the shape parameter that determines the type of modeled competition and $a$ the population regulation parameter that is related to carrying capacity ($K$):
+
+$$a= \frac{K(r-1)}{r^{1/b}  - 1}.$$
+An individual is born in the same patch as its parent. Parameters are fixed for all runs (**Table S05.1**).
+
+**Dispersal** -- Every newly generated offspring disperses with a probability equal to the simulation’s dispersal propensity ($d$). If it disperses, it dies and is not added to the population of the next generation with a probability equal to the simulation’s dispersal mortality ($m$). If the dispersing individual does survive dispersal, it will change location to one of the possible destination patches that has a direct link with the patch the offspring was born in at random.
+
+**Table S04.1** Model parameters.
+
+|Symbol|Description|Values|
+|:------:|:-----------|:----:|
+| $r$  | Optimal growth rate | 2 |
+| $b$ | Hassell shape parameter| 2 |
+| $K$| Local carrying capacity | 100|
+| $d$ | Dispersal propensity | 0.25 |
+| $m$ | Dispersal mortality | 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8 |
+
+## Results and interpretation
+
+The simulation model showed local ($\alpha$) and regional ($\gamma$) variability are expected to increase as a direct result of higher dispersal mortality under connectedness loss. As a results of spatial variability ($\beta_{2}$) increasing at the same time, spatial synchrony ($1/\beta$) remained unaffected (main text, **Fig. 3**). This is opposite to the observed metapopulation variabilities in the experiment. There, local ($\alpha$) and regional ($\gamma$) variability showed no effect of the connectedness treatment while synchrony ($1/\beta$) increased with increasing connectedness. Therefore, heterogeneity in the observed dynamics across treatments cannot only be explained by the direct effect of dispersal mortality or similar dispersal costs alone. Other effects such as (dispersal) trait evolution, and/or the consequences of density-dependent dispersal likely affected metapopulation variabilities meaningfully.
+
+Simulated metapopulation size decreases with increasing dispersal mortality under connectedness loss (**Fig. S04.1**, top) while we observed a higher metapopulation size in the least connected metapopulation when randomized and equal metapopulation sizes when not randomized. Simulated metapopulations showed biggest local sizes in the central patch and lowest in the corner patch (**Fig. S04.1**, bottom), which was the reverse of what was observed. Again, other effects such as genetic structure in the metapopulation or a stronger population regulation effect of resource depletion in the experimental setup likely affected this inconsistency.
+
+```{r import-simulation-output}
+sim_mortality <- read_csv(here("simulations_output", "tetranychus-metapop-2019-sims-disp-mortality.csv"))
+
+# one row = the summarised outcome of one simulation run
+# alphavar, betavar, betavar_, and gammavar: variabilities following Wang and Loreau 2014
+# betavar_ is the multiplicative one, betavar the additive one
+# size: mean patch population size, provided separately for each type of local connectedness (center, side, corner)
+# alphavar is also provided separately for eacg type of local connectedness, in addition to the main one
+# disp_mort: set dispersal mortality
+```
+
+```{r making-s4-plot}
+s4_metapop <- sim_mortality %>%
+  mutate(metapop_size = `size center` + 4 * `size corner` + 4 * `size side`) %>% 
+  ggplot() +
+  geom_point(aes(x = disp_mort, y = metapop_size), size = 2, alpha = 0.05) +
+  geom_smooth(aes(x = disp_mort, y = metapop_size), method = "gam",col="black") +
+  scale_colour_manual(values = c("#e66101", "#fdb863", "#5e3c99")) +
+  scale_y_continuous("mean metapopulation size",
+    lim = c(500, 900)
+  )
+
+
+s4_local <- sim_mortality %>%
+  select(-c(`alphavar corner`, `alphavar center`, `alphavar side`)) %>%
+  pivot_longer(cols = c(`size corner`, `size center`, `size side`)) %>%
+  mutate(`local connectedness` = fct_recode(factor(name),
+    `center (high)` = "size center",
+    `side (medium)` = "size side",
+    `corner (low)` = "size corner"
+  )) %>%
+  mutate(`local connectedness` = fct_relevel(`local connectedness`, "center (high)", after = Inf)) %>%
+  ggplot() +
+  geom_point(aes(x = disp_mort, y = value, col = `local connectedness`), size = 2, alpha = 0.05) +
+  geom_smooth(aes(x = disp_mort, y = value, col = `local connectedness`), method = "gam") +
+  scale_colour_manual(values = c("#e66101", "#fdb863", "#5e3c99")) +
+  scale_y_continuous("mean local population size",
+    lim = c(20, 150)
+  )
+```
+
+
+```{r displaying-s4-plot, fig.width=6, fig.height=6}
+(s4_metapop/s4_local) &
+  scale_x_continuous("Dispersal cost (mortality)") &
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
+
+**Figure S04.1** -- Effect of dispersal mortality on mean metapopulation and local population sizes, in simulated metapopulations
+
+# S05 -- Models description
 
 ## Patch-level model
 
@@ -183,47 +434,12 @@ In the patch-level model, priors for the fixed-effects coefficients $\beta_{j}$ 
 
 In the metapopulation-level model, we replaced the prior for $\beta_{0}$ by $\mathrm{Normal}(5,1)$ in order to match the fact that metapopulations contain 9 patches, and used general purpose $\mathrm{Normal}(0,1)$ priors for all fixed-effects parameters linked to the shape $\phi$.
 
-# S04 -- Comparisons between patch-level model predictions, metapopulation-level model predictions, and observed data
 
-```{r data-reshape}
+# S06 -- Posterior pairwise comparisons
 
-raw_data <- read_csv(here("data", "tetranychus-metapop-2019-dataset.csv"))
 
-data_wide <- raw_data %>%
-  mutate(PATCH = paste("P", PATCH, sep = "")) %>%
-  mutate(PATCH = str_remove(PATCH, "[.]")) %>%
-  ### the two lines above make patches names (a) easier to use as column names (letter as 1st character)
-  ### and consistent with brms standards on response variable names (best to avoid dots and underscore,
-  ### as some functions will remove them for output names and then matching input and output becomes slightly harder)
-  mutate(
-    LENGTH = fct_recode(factor(LENGTH),
-      `16 cm (low)` = "16",
-      `8 cm (medium)` = "8",
-      `4 cm (high)` = "4"
-    ),
-    SHUFFLE = fct_recode(as.factor(SHUFFLE),
-      `control` = "NO",
-      `randomized` = "R"
-    )
-  ) %>%
-  pivot_wider(names_from = PATCH, values_from = AFEMA) %>%
-  drop_na() # 3 out of ~550 rows contain NAs in at least one patch, discard
-```
 
-```{r data-metapop}
-M_data <- data_wide %>%
-  mutate(METAPOPSUM = select(., P11:P33) %>% rowSums()) %>%
-  select(METAPOP_ID, LENGTH, SHUFFLE, REPLICATE, WEEK, METAPOPSUM) %>%
-  mutate(LENGTH = factor(LENGTH))
-
-## adding dummy centered variables
-M_data <- M_data %>%
-  mutate(is.randomized = as.numeric(SHUFFLE == "randomized") - mean(as.numeric(SHUFFLE == "randomized"))) %>%
-  mutate(
-    is.landscape8 = as.numeric(LENGTH == "8 cm (medium)") - mean(as.numeric(LENGTH == "8 cm (medium)")),
-    is.landscape16 = as.numeric(LENGTH == "16 cm (low)") - mean(as.numeric(LENGTH == "16 cm (low)"))
-  )
-```
+# S07 -- Comparisons between patch-level model predictions, metapopulation-level model predictions, and observed data
 
 ```{r load-model-output}
 P_tab_plots <- read_csv(here("R_output", "P_tab.csv"))
@@ -299,7 +515,7 @@ P_tab_M_length <- P_tab_plots %>%
 ### double check the tabs above
 ```
 
-```{r plot-fig-s04-1, fig.width=8, fig.height=4}
+```{r plot-fig-s07-1, fig.width=8, fig.height=4}
 pA <- left_join(M_tab, P_tab_M) %>%
   left_join(M_tab_shuffle) %>%
   left_join(P_tab_M_shuffle) %>%
@@ -345,10 +561,10 @@ pB <- left_join(M_tab, P_tab_M) %>%
 (pA | pB) & theme(legend.position = "bottom") & plot_annotation(tag_levels = "A")
 ```
 
-**Figure S04.1** -- Comparisons between mean metapopulation size predictions (with 95% intervals) from the metapopulation-level model vs. the patch-level model (multiplying mean predictions by the number of patches, implicitly assuming patches are temporally independent). Treatment-level predictions (A: randomization treatment, B: metapopulation connectedness treatment) are added over replicate-level predictions (in grey).  Dotted line: $y = x$.
+**Figure S07.1** -- Comparisons between mean metapopulation size predictions (with 95% intervals) from the metapopulation-level model vs. the patch-level model (multiplying mean predictions by the number of patches, implicitly assuming patches are temporally independent). Treatment-level predictions (A: randomization treatment, B: metapopulation connectedness treatment) are added over replicate-level predictions (in grey).  Dotted line: $y = x$.
 
 
-```{r plot-fig-s04-2, fig.width=8, fig.height=4}
+```{r plot-fig-s07-2, fig.width=8, fig.height=4}
 pA <- left_join(M_tab, M_tab_obs) %>%
   ggplot() +
   geom_segment(aes(x = METAPOP_MEAN, xend = METAPOP_MEAN, y = .lower_M, yend = .upper_M), col = "grey85") +
@@ -374,158 +590,7 @@ pB <- left_join(P_tab_M, M_tab_obs) %>%
 (pA | pB) & plot_annotation(tag_levels = "A")
 ```
 
-**Figure S04.2** -- Comparisons between observed mean metapopulation sizes and mean metapopulation size predictions (with 95% intervals) from the metapopulation-level model (A) or the patch-level model (B: multiplying mean predictions by the number of patches, implicitly assuming patches are temporally independent).  Dotted line: $y = x$.
+**Figure S07.2** -- Comparisons between observed mean metapopulation sizes and mean metapopulation size predictions (with 95% intervals) from the metapopulation-level model (A) or the patch-level model (B: multiplying mean predictions by the number of patches, implicitly assuming patches are temporally independent).  Dotted line: $y = x$.
 
-
-# S05 -- Simulation model description and interpretation
-
-To contrast with the observed dynamics in the experiment and estimate the direct ecological impact of landscape composition, we built a simple model simulating the direct effect of connectedness on metapopulation variabilities and population sizes. 
-
-We simulated metapopulations resembling our experimental systems, i.e. 3×3 connected patch networks, in Python (version 3.8.5). We constructed an individual-based version of the classic metapopulation model in discrete generations. We only simulated dispersal and reproduction. As individuals did not differ in traits within a simulation, evolution was excluded.
-We analyzed different levels of dispersal mortality to simulate the higher dispersal costs associated with reduced connectedness (see **Fig. S02.1**). We decided to use mortality as a super-parameter that encompasses both the direct (i.e. death during dispersal) and the deferred (i.e. reduced reproductive success due to energy expenditure) costs of the dispersal event [@bachKinCompetitionEvolution2006].
-
-## ODD description
-
-We describe here the individual-based model using the ODD (Overview, Design, Details) protocol [@grimmODDProtocolReview2010].
-
-### Purpose
-
-The model simulates identical individuals moving and reproducing in a network of nine habitat patches in order to generate metapopulation dynamics, and obtain information about $\alpha$-, $\beta$- and $\gamma$-variability following @wangEcosystemStabilitySpace2014. We simulate what metapopulation dynamics would emerge if a population of a certain phenotype moves as a metapopulation through a certain patchy landscape. Most notably, we simulate what dynamics would emerge independent of individual heterogeneity, density-dependent dispersal, or evolution. The network was simulated to resemble the structure of the metapopulation mesocosms in the main text.
-We then analyze what the effect of dispersal mortality (as a characteristic of the landscape) is on metapopulation dynamics.
-
-### State variables and scale
-
-The model simulates individuals as the smallest unit. Individuals only vary in their location in the landscape, which can change to represent movement. 
-They inhabit metapopulations, which is another modeled unit that represent both the landscape and characteristics of the population living in it. All metapopulation characteristics are fixed within a simulation. Dispersal mortality vary across simulations in the range [0.05, 0.80]. Each independent landscape contains nine patches arranged in a 3×3 square and connected following Moore neighborhood rules, with each habitat patch being of undefined size. Landscapes were run for 500 time steps with each time step being a discrete generation.
-
-### Process, overview and scheduling
-
-Each simulation, after initialization, runs through 500 time steps. Each time step is a discrete generation where individuals, in a random order, each run through their life cycle. A life cycle in the model starts with reproduction, which includes population regulation based on the local population size.  After that, the offspring disperses according to a certain propensity. Dispersal includes dispersal mortality and updates that offspring’s location ($x$- and $y$-coordinates) if it is successful. This means that dispersal happens before reproduction in the life of an individual (even if in the model’s definition of a life cycle, dispersal of the next generation is already modeled while the current one's runs). When all individuals went through their life cycle and died, local population sizes of the offspring are recorded for that generation.
-
-### Design concepts
-
-**Emergence**: the number and distribution of individuals emerges from movement according along the network and population regulation on reproduction and therefore local population sizes.
-
-**Interaction**: Individuals only interact with one another when in the same habitat patch by competing for local resources. This is included as a population regulating reaction norm that determines reproduction.
-
-**Stochasticity**: Stochasticity plays at many points in the model.  At initialization, individuals are randomly placed in one of the habitat patches to generate a random starting distribution. Each individual disperses with a probability according to the dispersal propensity. If it does, it dies with a probability according to the dispersal mortality. If it survives, it disperses to one of the possible destination according to the network with an equal probability for each destination. Each of these are individual events that collectively should result in a certain random portion of the individuals doing one option. An individual’s realized number of offspring is drawn from a Poisson distribution with the expected number of offspring as its mean. This simulates a certain variability in fitness and conveniently returns an integer from a decimal expected number of offspring. The sequence of individuals that run through their life cycle is randomly chosen each generation.
-
-**Observation**: Population sizes for each habitat patch is recorded at the end of each generation. From that we calculate metapopulation size for each generation, average metapopulation size, average local population size for each location in the network, $\alpha$-, $\beta$- and $\gamma$-variability.
-
-**Scheduling**: Time is modeled in discrete time steps representing discrete generations. During each generation every individual runs through its life cycle before the next individual starts its life cycle. Earlier individuals do not change the environment in a way that would affect later individuals in the sequence.
-
-### Initialization
-
-At the start of a simulation, a metapopulation is initialized with parameters that will stay fixed for the duration of that simulation. The only parameter that varies among simulations is the dispersal mortality. Furthermore, the model initializes a population with half the metapopulation carrying capacity. This is half of nine times the carrying capacity of a patch or 450 ($K$ = 100, **Table S05.1**) individuals that are randomly allocated to one of the nine patches.
-
-### Input
-
-Each simulation receives a dispersal mortality ($m$) parameter that ranges from 0.05 to 0.8 in steps of 0.05 (**Table S05.1**). We choose not to simulate dispersal mortalities above 0.8 since that would simulate something closer to an unconnected network with a high mortality that are prone to population crashes. We replicate simulations of every input value twenty times. <!--check the number of replicates, and check mismatch between text saying max m = 0.85 and figure saying max m = 0.8-->
-
-### Submodels
-
-**Reproduction** -- Each individual $i$ reproduces resulting in a number of offspring ($f_{i}$) which is drawn from a Poisson distribution:
-
-$$ f_{i} \sim \mathrm{Poisson}(\mu_{i}).$$
-
-$\mu$ is the expected number of offspring that is affected by the current number of adults, already produced offspring of that generation not included, according to Hassell’s population model:
-
-$$\mu_{i}= r \begin{pmatrix}\frac{1+N_{i}(r-1)}{a}\end{pmatrix}^b,$$
-
-with $r$ the optimal population growth parameter, $N_i$ the local population density experienced by individual $i$ (excluding newly generated offspring), $b$ the shape parameter that determines the type of modeled competition and $a$ the population regulation parameter that is related to carrying capacity ($K$):
-
-$$a= \frac{K(r-1)}{r^{1/b}  - 1}.$$
-An individual is born in the same patch as its parent. Parameters are fixed for all runs (**Table S05.1**).
-
-**Dispersal** -- Every newly generated offspring disperses with a probability equal to the simulation’s dispersal propensity ($d$). If it disperses, it dies and is not added to the population of the next generation with a probability equal to the simulation’s dispersal mortality ($m$). If the dispersing individual does survive dispersal, it will change location to one of the possible destination patches that has a direct link with the patch the offspring was born in at random.
-
-**Table S05.1** Model parameters.
-
-|Symbol|Description|Values|
-|:------:|:-----------|:----:|
-| $r$  | Optimal growth rate | 2 |
-| $b$ | Hassell shape parameter| 2 |
-| $K$| Local carrying capacity | 100|
-| $d$ | Dispersal propensity | 0.25 |
-| $m$ | Dispersal mortality | 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8 |
-
-## Results and interpretation
-
-```{r import-simulation-output}
-sim_mortality <- read_csv(here("simulations_output", "tetranychus-metapop-2019-sims-disp-mortality.csv"))
-
-# one row = the summarised outcome of one simulation run
-# alphavar, betavar, betavar_, and gammavar: variabilities following Wang and Loreau 2014
-# betavar_ is the multiplicative one, betavar the additive one
-# size: mean patch population size, provided separately for each type of local connectedness (center, side, corner)
-# alphavar is also provided separately for eacg type of local connectedness, in addition to the main one
-# disp_mort: set dispersal mortality
-```
-
-```{r making-s5-plot}
-A1 <- ggplot(sim_mortality, aes(x = disp_mort, y = alphavar)) +
-  geom_point(size = 2, col = "grey80") +
-  geom_smooth(method = "gam", col = "black") +
-  scale_y_continuous(expression(paste(alpha, " variability")),
-    lim = c(0.01, 0.025)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-
-B1 <- ggplot(sim_mortality, aes(x = disp_mort, y = 1 / betavar_)) +
-  geom_point(size = 2, col = "grey80") +
-  geom_smooth(method = "gam", col = "black") +
-  scale_y_continuous(expression(paste("Spatial synchrony  ", phi1)),
-    lim = c(0.05, 0.25)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-
-C1 <- ggplot(sim_mortality, aes(x = disp_mort, y = gammavar)) +
-  geom_point(size = 2, col = "grey80") +
-  geom_smooth(method = "gam", col = "black") +
-  scale_y_continuous(expression(paste(gamma, " variability")),
-    lim = c(0.001, 0.0055)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-
-D1 <- sim_mortality %>%
-  select(-c(`alphavar corner`, `alphavar center`, `alphavar side`)) %>%
-  pivot_longer(cols = c(`size corner`, `size center`, `size side`)) %>%
-  mutate(`local connectedness` = fct_recode(factor(name),
-    `center (high)` = "size center",
-    `side (medium)` = "size side",
-    `corner (low)` = "size corner"
-  )) %>%
-  mutate(`local connectedness` = fct_relevel(`local connectedness`, "center (high)", after = Inf)) %>%
-  ggplot() +
-  geom_point(aes(x = disp_mort, y = value, col = `local connectedness`), size = 2, alpha = 0.05) +
-  geom_smooth(aes(x = disp_mort, y = value, col = `local connectedness`), method = "gam") +
-  scale_colour_manual(values = c("#e66101", "#fdb863", "#5e3c99")) +
-  scale_y_continuous("mean local population size",
-    lim = c(20, 150)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-
-
-E1 <- ggplot(sim_mortality, aes(x = disp_mort, y = betavar)) +
-  geom_point(size = 2, col = "grey80") +
-  geom_smooth(method = "gam", col = "black") +
-  scale_y_continuous(expression(paste("Additive spatial variability   ", beta[2])),
-    lim = c(0.005, 0.025)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-```
-
-```{r displaying-s5-plot, fig.width=8, fig.height=5}
-(A1 | B1) / (C1 | D1) &
-  cowplot::theme_half_open(11) &
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-```
-
-**Figure S05.1** -- Effect of dispersal mortality on metapopulation variability and population size, in simulated metapopulations
-
-
-The simulation model showed local ($\alpha$) and regional ($\gamma$) variability are expected to increase as a direct result of higher dispersal mortality under connectedness loss. Synchrony ($1/\beta$) remained unaffected (**Fig. S05.1**). This is opposite to the observed metapopulation variabilities in the experiment. In our experiment, local ($\alpha$) and regional ($\gamma$) variability showed no effect of the connectedness treatment while synchrony ($1/\beta$) increased with increasing connectedness. Therefore, heterogeneity in the observed dynamics across treatments cannot only be explained by the direct effect of dispersal mortality or similar dispersal costs alone. Other effects such as (dispersal) trait evolution, and/or the consequences of density-dependent dispersal likely affected metapopulation variabilities meaningfully.
-
-Simulated population size differences between separate patches are not in accordance with observed results. Simulated metapopulations showed highest sizes in the central patch and lowest in the corner patch, which was the reverse of what was observed. As discussed in the main text, other effects such as genetic structure in the metapopulation, density-dependence of dispersal, or a stronger population regulation effect of resource depletion in the experimental setup likely explain this inconsistency.
 
 # References

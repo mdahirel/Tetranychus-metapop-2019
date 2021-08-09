@@ -1399,42 +1399,80 @@ P_tab_fig3b %>%
   scale_y_discrete("comparison")
 ```
 
-# Some stuff to prepare for the revisions/ the supplementary
+# the simulation variability plot
 
-## let's check if metapops are at equilibrium
 
-```{r}
-M_formula_cont <- bf(
-  METAPOPSUM ~ 0 + METAPOP_ID + METAPOP_ID:scale(WEEK),# + ar(time=WEEK, gr=METAPOP_ID),
-  nlf(shape ~ 1 / exp(loginvshape)),
-  ## we fit the model on the inverse of shape
-  ## (avoid assuming a priori that very large overdispersions _ low values of shape _ are more likely)
-  ## and we need a log transformation to keep things >0
-  loginvshape ~ 0+METAPOP_ID,
-  family = negbinomial(link_shape = "identity")
-) # the transformation link is already "included" in the code just above
+```{r import-simulation-output}
+sim_mortality <- read_csv(here("simulations_output", "tetranychus-metapop-2019-sims-disp-mortality.csv"))
 
-M_prior_cont <- c(
-  ### PRIORS FOR THE METAPOP LEVEL MODEL
-  set_prior("normal(0,1)",class="b"),
-  set_prior("normal(5,1)",class="b",coef=paste("METAPOP_ID",unique(M_data$METAPOP_ID),sep="")),
-  set_prior("normal(0,1)", class = "b", nlpar = c("loginvshape"))
-)
-
-M_mod_cont <- brm(
-     formula = M_formula_cont, prior = M_prior_cont, data = M_data,
-     iter = N_iter, warmup = N_warmup, chains = N_chains, seed = 42,
-     control = list(adapt_delta = 0.9),
-     backend = "cmdstanr"
-   )
-
-M_data %>% 
-  add_fitted_draws(M_mod_cont) %>% 
-  ggplot()+
-  stat_lineribbon(aes(WEEK,.value),.width=c(0.01,0.95),col="grey")+
-  geom_line(data=M_data,
-            aes(WEEK,METAPOPSUM,group=METAPOP_ID))+facet_wrap(~METAPOP_ID)
+# one row = the summarised outcome of one simulation run
+# alphavar, betavar, betavar_, and gammavar: variabilities following Wang and Loreau 2014
+# betavar_ is the multiplicative one, betavar the additive one
+# size: mean patch population size, provided separately for each type of local connectedness (center, side, corner)
+# alphavar is also provided separately for eacg type of local connectedness, in addition to the main one
+# disp_mort: set dispersal mortality
 ```
+
+```{r making-s5-plot}
+A1 <- ggplot(sim_mortality, aes(x = disp_mort, y = alphavar)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste(alpha, " variability")),
+    lim = c(0.01, 0.025)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+
+B1 <- ggplot(sim_mortality, aes(x = disp_mort, y = 1 / betavar_)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste("Spatial synchrony  ", phi1)),
+    lim = c(0.05, 0.25)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+
+C1 <- ggplot(sim_mortality, aes(x = disp_mort, y = gammavar)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste(gamma, " variability")),
+    lim = c(0.001, 0.0055)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+
+D1 <- sim_mortality %>%
+  select(-c(`alphavar corner`, `alphavar center`, `alphavar side`)) %>%
+  pivot_longer(cols = c(`size corner`, `size center`, `size side`)) %>%
+  mutate(`local connectedness` = fct_recode(factor(name),
+    `center (high)` = "size center",
+    `side (medium)` = "size side",
+    `corner (low)` = "size corner"
+  )) %>%
+  mutate(`local connectedness` = fct_relevel(`local connectedness`, "center (high)", after = Inf)) %>%
+  ggplot() +
+  geom_point(aes(x = disp_mort, y = value, col = `local connectedness`), size = 2, alpha = 0.05) +
+  geom_smooth(aes(x = disp_mort, y = value, col = `local connectedness`), method = "gam") +
+  scale_colour_manual(values = c("#e66101", "#fdb863", "#5e3c99")) +
+  scale_y_continuous("mean local population size",
+    lim = c(20, 150)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+
+
+E1 <- ggplot(sim_mortality, aes(x = disp_mort, y = betavar)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste("Additive spatial variability   ", beta[2])),
+    lim = c(0.005, 0.025)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+```
+
+```{r displaying-s5-plot, fig.width=8, fig.height=5}
+(A1 | B1) / (C1 | D1) &
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
+
+
 
 # now let's do pairwise comparison plots
 
