@@ -437,7 +437,53 @@ In the metapopulation-level model, we replaced the prior for $\beta_{0}$ by $\ma
 
 # S06 -- Posterior pairwise comparisons
 
+The following plots describe the outcome of posterior pairwise comparisons between treatments, regarding local population sizes (**Fig. S06-1** and **S06-2**, match with main text **Figs 1-2**) and variability metrics (**Fig. S06-3** and **S06-4**, matches with main text **Fig. 4**). In all cases, comparisons are ratios, and dots and segments represent the posterior mean and 95% Highest Density Interval.
 
+```{r pairwise_comp_fig1, fig.width=5, fig.height=7}
+load(here("R_output","pairwise_posteriors_popsize1.Rdata"))
+
+pair1a <- pairwise1SHUFFLE %>% 
+  ggplot() + 
+  stat_eye(aes(mean,SHUFFLE),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1) +
+  labs(subtitle="effect of randomization",
+       x="",
+       y="")
+
+pair1b <- pairwise1LENGTH %>% 
+  ggplot() + 
+  stat_eye(aes(mean,LENGTH),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  labs(subtitle="effect of landscape connectedness",
+       x="",
+       y="comparison")
+
+pair1c <- pairwise1local %>% 
+  ggplot() + 
+  stat_eye(aes(mean,local_connectedness),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  labs(subtitle="effect of local connectedness",
+       x="posterior ratio of mean population sizes",
+       y="")
+
+(pair1a/pair1b/pair1c) &
+  coord_cartesian(xlim=c(0.75,1.35)) &
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
+
+**Figure S06.1** -- Effects of connectedness and randomization on local population size. For each treatment variable the effects of the others are pooled.
+
+
+**Figure S06.2** -- Effects of connectedness and randomization on local population size.
+
+
+**Figure S06.3** -- Effect of randomization on variability metrics
+
+**Figure S06.4** -- Effect of landscape connectedness on veriability metrics
 
 # S07 -- Comparisons between patch-level model predictions, metapopulation-level model predictions, and observed data
 

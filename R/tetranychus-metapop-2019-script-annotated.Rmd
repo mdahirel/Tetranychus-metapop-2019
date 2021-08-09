@@ -897,14 +897,212 @@ pair1c <- pairwise1local %>%
 
 (pair1a/pair1b/pair1c) &
   coord_cartesian(xlim=c(0.75,1.35))
+
+save(list=c("pairwise1SHUFFLE","pairwise1LENGTH","pairwise1local"),file=here("R_output","pairwise_posteriors_popsize1.Rdata"))
 ```
 
-## Metapopulation variability metrics
+## Patch-level means, interactive effects
 
 ### Figure 2
 
 ```{r fig2_tables}
-P_tab_fig2_shuffle <- P_tab_plots %>%
+P_tab_fig2a <- P_tab_plots %>%
+  group_by(.iteration, LENGTH, SHUFFLE) %>%
+  summarise(mean = mean(P_mean_all)) %>%
+  ungroup()
+
+P_tab_fig2b <- P_tab_plots %>%
+  pivot_longer(
+    cols = c(P_mean_center, P_mean_sides, P_mean_corners),
+    names_to = "local_connectedness", values_to = "P_mean_local"
+  ) %>%
+  mutate(local_connectedness = fct_recode(factor(local_connectedness),
+    `center (high)` = "P_mean_center",
+    `side (medium)` = "P_mean_sides",
+    `corner (low)` = "P_mean_corners"
+  )) %>%
+  mutate(local_connectedness = fct_relevel(
+    factor(local_connectedness),
+    "corner (low)", "side (medium)", "center (high)"
+  )) %>%
+  group_by(.iteration, local_connectedness, SHUFFLE) %>%
+  summarise(mean = mean(P_mean_local)) %>%
+  ungroup()
+```
+
+
+```{r fig2}
+fig2a <- ggplot(P_tab_fig2a) +
+  geom_jitter(
+    data = P_obsmeans,
+    aes(
+      x = P_mean_obs, y = LENGTH,
+      alpha = 1 / (P_var_obs / P_mean_obs^2)
+    ),
+    col = "grey60", height = 0.2, size = 3
+  ) +
+  stat_halfeye(aes(x = mean, y = LENGTH, fill = LENGTH),
+    orientation = "horizontal",
+    .width = c(0.01, 0.95), slab_alpha = 0.7,
+    point_interval = mean_hdi
+  ) +
+  scale_fill_manual(values = paletteLENGTH) +
+  scale_x_continuous("") +
+  scale_y_discrete("Metapopulation connectedness") +
+  facet_wrap(~SHUFFLE)
+
+fig2b <- ggplot(P_tab_fig2b) +
+  geom_jitter(
+    data = P_obsmeans,
+    aes(
+      x = P_mean_obs, y = local_connectedness,
+      alpha = (1 / (P_var_obs / P_mean_obs^2))
+    ),
+    col = "grey60", height = 0.2, size = 3
+  ) +
+  stat_halfeye(aes(x = mean, y = local_connectedness, fill = local_connectedness),
+    orientation = "horizontal",
+    .width = c(0.01, 0.95), slab_alpha = 0.7,
+    point_interval = mean_hdi
+  ) +
+  scale_fill_manual(values = paletteLOCAL) +
+  scale_x_continuous("temporal mean of patch population size (adult females)") +
+  scale_y_discrete("Local connectedness") +
+  facet_wrap(~SHUFFLE)
+
+(fig2a / fig2b) &
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
+    theme(legend.position = "none") &
+  coord_cartesian(xlim = c(5, 50))
+```
+
+### Pairwise comparisons
+
+```{r pairwise_comp_fig3}
+P_tab_fig2a %>%
+  group_by(SHUFFLE) %>%
+  compare_levels(
+    variable = mean, by = LENGTH, fun = `/`,
+    comparison = list(
+      # we give the comparison list explicitly since by default it will give 4cm/16cm
+      # and we'd rather present the reverse
+      c("16 cm (low)", "4 cm (high)"),
+      c("16 cm (low)", "8 cm (medium)"),
+      c("8 cm (medium)", "4 cm (high)")
+    )
+  ) %>%
+  mean_hdi()
+
+P_tab_fig2a %>%
+  group_by(LENGTH) %>%
+  compare_levels(variable = mean, by = SHUFFLE, fun = `/`) %>%
+  mean_hdi()
+
+P_tab_fig2a %>% 
+  mutate(group=paste(LENGTH, SHUFFLE)) %>% 
+  compare_levels(variable = mean, by = group, fun = `/`) %>%
+  ggplot() + 
+  stat_eye(aes(mean,group),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean population sizes")+
+  scale_y_discrete("comparison")
+
+
+
+P_tab_fig2b %>%
+  group_by(SHUFFLE) %>%
+  compare_levels(
+    variable = mean, by = local_connectedness, fun = `/`,
+    comparison = list(
+      # we give the comparison list explicitly since by default it will give center/corner
+      # and we'd rather present the reverse
+      c("corner (low)", "center (high)"),
+      c("corner (low)", "side (medium)"),
+      c("side (medium)", "center (high)")
+    )
+  ) %>%
+  mean_hdi()
+
+P_tab_fig2b %>%
+  group_by(local_connectedness) %>%
+  compare_levels(variable = mean, by = SHUFFLE, fun = `/`) %>%
+  mean_hdi()
+
+P_tab_fig2b %>% 
+  mutate(group=paste(local_connectedness, SHUFFLE)) %>% 
+  compare_levels(variable = mean, by = group, fun = `/`) %>%
+  ggplot() + 
+  stat_eye(aes(mean,group),.width=c(0.01,0.95),
+           point_interval=mean_hdi)+
+  geom_vline(xintercept = 1)+
+  scale_x_continuous("posterior ratio of mean population sizes")+
+  scale_y_discrete("comparison")
+```
+
+## Metapopulation variability metrics
+
+### Figure 3: uses simulation outputs
+
+```{r import-simulation-output}
+sim_mortality <- read_csv(here("simulations_output", "tetranychus-metapop-2019-sims-disp-mortality.csv"))
+
+# one row = the summarised outcome of one simulation run
+# alphavar, betavar, betavar_, and gammavar: variabilities following Wang and Loreau 2014
+# betavar_ is the multiplicative one, betavar the additive one
+# size: mean patch population size, provided separately for each type of local connectedness (center, side, corner)
+# alphavar is also provided separately for eacg type of local connectedness, in addition to the main one
+# disp_mort: set dispersal mortality
+```
+
+```{r making-fig3}
+A1 <- ggplot(sim_mortality, aes(x = disp_mort, y = alphavar)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste(alpha, " variability")),
+    lim = c(0.005, 0.025)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+
+B1 <- ggplot(sim_mortality, aes(x = disp_mort, y = betavar)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste("Additive spatial variability   ", beta[2])),
+    lim = c(0.005, 0.025)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+
+C1 <- ggplot(sim_mortality, aes(x = disp_mort, y = 1 / betavar_)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste("Spatial synchrony  ", phi1)),
+    lim = c(0.05, 0.25)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+
+D1 <- ggplot(sim_mortality, aes(x = disp_mort, y = gammavar)) +
+  geom_point(size = 2, col = "grey80") +
+  geom_smooth(method = "gam", col = "black") +
+  scale_y_continuous(expression(paste(gamma, " variability")),
+    lim = c(0.001, 0.0055)
+  ) +
+  scale_x_continuous("Dispersal cost (mortality)")
+
+```
+
+```{r displaying-fig3}
+(A1 | B1 | C1 | D1) &
+  cowplot::theme_half_open(11) &
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
+
+
+
+### Figure 4
+
+```{r fig4_tables}
+P_tab_fig4_shuffle <- P_tab_plots %>%
   group_by(.iteration, SHUFFLE) %>%
   summarise(
     mean_alpha = mean(P_alpha),
@@ -914,7 +1112,7 @@ P_tab_fig2_shuffle <- P_tab_plots %>%
   ) %>%
   ungroup()
 
-P_tab_fig2_length <- P_tab_plots %>%
+P_tab_fig4_length <- P_tab_plots %>%
   group_by(.iteration, LENGTH) %>%
   summarise(
     mean_alpha = mean(P_alpha),
@@ -928,7 +1126,7 @@ P_tab_fig2_length <- P_tab_plots %>%
 ## this allows us to display in grey the "ghost" of the posterior we would have
 ## if we excluded shuffled replicates
 ## showing our results are mostly independent of shuffling
-P_tab_fig2_length_noshuffle <- P_tab_plots %>%
+P_tab_fig4_length_noshuffle <- P_tab_plots %>%
   filter(SHUFFLE == "control") %>%
   group_by(.iteration, LENGTH) %>%
   summarise(
@@ -941,9 +1139,9 @@ P_tab_fig2_length_noshuffle <- P_tab_plots %>%
 ```
 
 
-```{r fig2}
+```{r fig4}
 
-fig2_alpha_a <- ggplot(P_tab_fig2_shuffle) +
+fig4_alpha_a <- ggplot(P_tab_fig4_shuffle) +
   stat_halfeye(aes(x = mean_alpha, y = SHUFFLE, fill = SHUFFLE),
     orientation = "horizontal",
     .width = c(0.01, 0.95), slab_alpha = 0.7,
@@ -953,16 +1151,16 @@ fig2_alpha_a <- ggplot(P_tab_fig2_shuffle) +
   scale_y_discrete("Randomization?") +
   coord_cartesian(xlim = c(0.8, 1.4))
 
-fig2_alpha_b <- ggplot(P_tab_fig2_length) +
+fig4_alpha_b <- ggplot(P_tab_fig4_length) +
   ## line version of the "ghost"
-  # stat_slab(data=P_tab_fig2_length_noshuffle,
+  # stat_slab(data=P_tab_fig4_length_noshuffle,
   #             aes(x=mean_alpha,y=LENGTH),
   #             orientation="horizontal",col="grey",slab_linetype=2,slab_size=0.6,
   #             fill=NA,
   #             point_interval=NULL)+
   # filled version
   stat_halfeye(
-    data = P_tab_fig2_length_noshuffle,
+    data = P_tab_fig4_length_noshuffle,
     aes(x = mean_alpha, y = LENGTH),
     fill = "grey",
     orientation = "horizontal",
@@ -980,7 +1178,7 @@ fig2_alpha_b <- ggplot(P_tab_fig2_length) +
   scale_y_discrete("Metapopulation connectedness") +
   coord_cartesian(xlim = c(0.8, 1.4))
 
-fig2_phi_a <- ggplot(P_tab_fig2_shuffle) +
+fig4_phi_a <- ggplot(P_tab_fig4_shuffle) +
   stat_halfeye(aes(x = mean_phi, y = SHUFFLE, fill = SHUFFLE),
     orientation = "horizontal",
     .width = c(0.01, 0.95), slab_alpha = 0.7,
@@ -990,16 +1188,16 @@ fig2_phi_a <- ggplot(P_tab_fig2_shuffle) +
   scale_y_discrete("") +
   coord_cartesian(xlim = c(0.20, 0.35))
 
-fig2_phi_b <- ggplot(P_tab_fig2_length) +
+fig4_phi_b <- ggplot(P_tab_fig4_length) +
   ## line version of the "ghost"
-  # stat_slab(data=P_tab_fig2_length_noshuffle,
+  # stat_slab(data=P_tab_fig4_length_noshuffle,
   #             aes(x=mean_phi,y=LENGTH),
   #             orientation="horizontal",col="grey",slab_linetype=2,slab_size=0.6,
   #             fill=NA,
   #             point_interval=NULL)+
   # filled version
   stat_halfeye(
-    data = P_tab_fig2_length_noshuffle,
+    data = P_tab_fig4_length_noshuffle,
     aes(x = mean_phi, y = LENGTH),
     orientation = "horizontal",
     slab_alpha = 0.3,
@@ -1016,7 +1214,7 @@ fig2_phi_b <- ggplot(P_tab_fig2_length) +
   scale_y_discrete("") +
   coord_cartesian(xlim = c(0.20, 0.35))
 
-fig2_gamma_a <- ggplot(P_tab_fig2_shuffle) +
+fig4_gamma_a <- ggplot(P_tab_fig4_shuffle) +
   stat_halfeye(aes(x = mean_gamma, y = SHUFFLE, fill = SHUFFLE),
     orientation = "horizontal",
     .width = c(0.01, 0.95), slab_alpha = 0.7,
@@ -1026,16 +1224,16 @@ fig2_gamma_a <- ggplot(P_tab_fig2_shuffle) +
   scale_y_discrete("") +
   coord_cartesian(xlim = c(0.15, 0.45))
 
-fig2_gamma_b <- ggplot(P_tab_fig2_length) +
+fig4_gamma_b <- ggplot(P_tab_fig4_length) +
   ## line version of the "ghost"
-  # stat_slab(data=P_tab_fig2_length_noshuffle,
+  # stat_slab(data=P_tab_fig4_length_noshuffle,
   #             aes(x=mean_gamma,y=LENGTH),
   #             orientation="horizontal",col="grey",slab_linetype=2,slab_size=0.6,
   #             fill=NA,
   #             point_interval=NULL)+
   # filled version
   stat_halfeye(
-    data = P_tab_fig2_length_noshuffle,
+    data = P_tab_fig4_length_noshuffle,
     aes(x = mean_gamma, y = LENGTH),
     orientation = "horizontal",
     slab_alpha = 0.3,
@@ -1052,7 +1250,7 @@ fig2_gamma_b <- ggplot(P_tab_fig2_length) +
   scale_y_discrete("") +
   coord_cartesian(xlim = c(0.15, 0.45))
 
-fig2_beta2_a <- ggplot(P_tab_fig2_shuffle) +
+fig4_beta2_a <- ggplot(P_tab_fig4_shuffle) +
   stat_halfeye(aes(x = mean_beta2, y = SHUFFLE, fill = SHUFFLE),
     orientation = "horizontal",
     .width = c(0.01, 0.95), slab_alpha = 0.7,
@@ -1062,16 +1260,16 @@ fig2_beta2_a <- ggplot(P_tab_fig2_shuffle) +
   scale_y_discrete("") +
   coord_cartesian(xlim = c(0.5, 1))
 
-fig2_beta2_b <- ggplot(P_tab_fig2_length) +
+fig4_beta2_b <- ggplot(P_tab_fig4_length) +
   ## line version of the "ghost"
-  # stat_slab(data=P_tab_fig2_length_noshuffle,
-  #             aes(x=mean_uneven,y=LENGTH),
+  # stat_slab(data=P_tab_fig4_length_noshuffle,
+  #             aes(x=mean_beta2,y=LENGTH),
   #             orientation="horizontal",col="grey",slab_linetype=2,slab_size=0.6,
   #             fill=NA,
   #             point_interval=NULL)+
   # filled version
   stat_halfeye(
-    data = P_tab_fig2_length_noshuffle,
+    data = P_tab_fig4_length_noshuffle,
     aes(x = mean_beta2, y = LENGTH),
     orientation = "horizontal",
     slab_alpha = 0.3,
@@ -1088,10 +1286,10 @@ fig2_beta2_b <- ggplot(P_tab_fig2_length) +
   scale_y_discrete("") +
   coord_cartesian(xlim = c(0.5, 1))
 
-((fig2_alpha_a / fig2_alpha_b) |
-  (fig2_beta2_a / fig2_beta2_b)|
-  (fig2_phi_a / fig2_phi_b) |
-  (fig2_gamma_a / fig2_gamma_b) ) &
+((fig4_alpha_a / fig4_alpha_b) |
+  (fig4_beta2_a / fig4_beta2_b)|
+  (fig4_phi_a / fig4_phi_b) |
+  (fig4_gamma_a / fig4_gamma_b) ) &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(
     colour.major = "grey95",
@@ -1103,8 +1301,8 @@ fig2_beta2_b <- ggplot(P_tab_fig2_length) +
 
 ### Pairwise comparisons
 
-```{r pairwise_comp_fig2}
-pairwise2alpha_shuffle <- P_tab_fig2_shuffle %>%
+```{r pairwise_comp_fig4}
+pairwise2alpha_shuffle <- P_tab_fig4_shuffle %>%
   compare_levels(variable = mean_alpha, by = SHUFFLE, fun = `/`) 
 
 pairwise2alpha_shuffle %>%
@@ -1118,7 +1316,7 @@ pair2alpha_a <- pairwise2alpha_shuffle %>%
   scale_x_continuous("")+
   scale_y_discrete("comparison")
 
-pairwise2phi_shuffle <- P_tab_fig2_shuffle %>%
+pairwise2phi_shuffle <- P_tab_fig4_shuffle %>%
   compare_levels(variable = mean_phi, by = SHUFFLE, fun = `/`) 
 
 pairwise2phi_shuffle %>%
@@ -1132,7 +1330,7 @@ pair2phi_a <- pairwise2phi_shuffle %>%
   scale_x_continuous("")+
   scale_y_discrete("comparison")
 
-pairwise2gamma_shuffle <- P_tab_fig2_shuffle %>%
+pairwise2gamma_shuffle <- P_tab_fig4_shuffle %>%
   compare_levels(variable = mean_gamma, by = SHUFFLE, fun = `/`) 
 
 pairwise2gamma_shuffle %>%
@@ -1146,7 +1344,7 @@ pair2gamma_a <- pairwise2gamma_shuffle %>%
   scale_x_continuous("")+
   scale_y_discrete("comparison")
 
-pairwise2beta2_shuffle <- P_tab_fig2_shuffle %>%
+pairwise2beta2_shuffle <- P_tab_fig4_shuffle %>%
   compare_levels(variable = mean_beta2, by = SHUFFLE, fun = `/`) 
 
 pairwise2beta2_shuffle %>%
@@ -1160,7 +1358,7 @@ pair2beta2_a <- pairwise2beta2_shuffle %>%
   scale_x_continuous("")+
   scale_y_discrete("comparison")
 
-pairwise2alpha_length <- P_tab_fig2_length %>%
+pairwise2alpha_length <- P_tab_fig4_length %>%
   compare_levels(
     variable = mean_alpha, by = LENGTH, fun = `/`,
     comparison = list(
@@ -1183,7 +1381,7 @@ pair2alpha_b <- pairwise2alpha_length %>%
   scale_x_continuous("posterior ratio of mean alphas")+
   scale_y_discrete("comparison")
 
-pairwise2phi_length <- P_tab_fig2_length %>%
+pairwise2phi_length <- P_tab_fig4_length %>%
   compare_levels(
     variable = mean_phi, by = LENGTH, fun = `/`,
     comparison = list(
@@ -1206,7 +1404,7 @@ pair2phi_b <- pairwise2phi_length %>%
   scale_x_continuous("posterior ratio of mean phis")+
   scale_y_discrete("comparison")
 
-pairwise2gamma_length <- P_tab_fig2_length %>%
+pairwise2gamma_length <- P_tab_fig4_length %>%
   compare_levels(
     variable = mean_gamma, by = LENGTH, fun = `/`,
     comparison = list(
@@ -1229,7 +1427,7 @@ pair2gamma_b <- pairwise2gamma_length %>%
   scale_x_continuous("posterior ratio of mean gammas")+
   scale_y_discrete("comparison")
 
-pairwise2beta2_length <- P_tab_fig2_length %>%
+pairwise2beta2_length <- P_tab_fig4_length %>%
   compare_levels(
     variable = mean_beta2, by = LENGTH, fun = `/`,
     comparison = list(
@@ -1258,225 +1456,6 @@ pair2beta2_b <- pairwise2beta2_length %>%
 (pair2gamma_a/pair2gamma_b) & coord_cartesian(xlim=c(0.6,1.5))
 (pair2beta2_a/pair2beta2_b) & coord_cartesian(xlim=c(0.5,1.5))
 ```
-
-## Patch-level means, interactive effects
-
-### Figure 3
-
-```{r fig3_tables}
-P_tab_fig3a <- P_tab_plots %>%
-  group_by(.iteration, LENGTH, SHUFFLE) %>%
-  summarise(mean = mean(P_mean_all)) %>%
-  ungroup()
-
-P_tab_fig3b <- P_tab_plots %>%
-  pivot_longer(
-    cols = c(P_mean_center, P_mean_sides, P_mean_corners),
-    names_to = "local_connectedness", values_to = "P_mean_local"
-  ) %>%
-  mutate(local_connectedness = fct_recode(factor(local_connectedness),
-    `center (high)` = "P_mean_center",
-    `side (medium)` = "P_mean_sides",
-    `corner (low)` = "P_mean_corners"
-  )) %>%
-  mutate(local_connectedness = fct_relevel(
-    factor(local_connectedness),
-    "corner (low)", "side (medium)", "center (high)"
-  )) %>%
-  group_by(.iteration, local_connectedness, SHUFFLE) %>%
-  summarise(mean = mean(P_mean_local)) %>%
-  ungroup()
-```
-
-
-```{r fig3}
-fig3a <- ggplot(P_tab_fig3a) +
-  geom_jitter(
-    data = P_obsmeans,
-    aes(
-      x = P_mean_obs, y = LENGTH,
-      alpha = 1 / (P_var_obs / P_mean_obs^2)
-    ),
-    col = "grey60", height = 0.2, size = 3
-  ) +
-  stat_halfeye(aes(x = mean, y = LENGTH, fill = LENGTH),
-    orientation = "horizontal",
-    .width = c(0.01, 0.95), slab_alpha = 0.7,
-    point_interval = mean_hdi
-  ) +
-  scale_fill_manual(values = paletteLENGTH) +
-  scale_x_continuous("") +
-  scale_y_discrete("Metapopulation connectedness") +
-  facet_wrap(~SHUFFLE)
-
-fig3b <- ggplot(P_tab_fig3b) +
-  geom_jitter(
-    data = P_obsmeans,
-    aes(
-      x = P_mean_obs, y = local_connectedness,
-      alpha = (1 / (P_var_obs / P_mean_obs^2))
-    ),
-    col = "grey60", height = 0.2, size = 3
-  ) +
-  stat_halfeye(aes(x = mean, y = local_connectedness, fill = local_connectedness),
-    orientation = "horizontal",
-    .width = c(0.01, 0.95), slab_alpha = 0.7,
-    point_interval = mean_hdi
-  ) +
-  scale_fill_manual(values = paletteLOCAL) +
-  scale_x_continuous("temporal mean of patch population size (adult females)") +
-  scale_y_discrete("Local connectedness") +
-  facet_wrap(~SHUFFLE)
-
-(fig3a / fig3b) &
-  cowplot::theme_half_open(11) &
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
-    theme(legend.position = "none") &
-  coord_cartesian(xlim = c(5, 50))
-```
-
-### Pairwise comparisons
-
-```{r pairwise_comp_fig3}
-P_tab_fig3a %>%
-  group_by(SHUFFLE) %>%
-  compare_levels(
-    variable = mean, by = LENGTH, fun = `/`,
-    comparison = list(
-      # we give the comparison list explicitly since by default it will give 4cm/16cm
-      # and we'd rather present the reverse
-      c("16 cm (low)", "4 cm (high)"),
-      c("16 cm (low)", "8 cm (medium)"),
-      c("8 cm (medium)", "4 cm (high)")
-    )
-  ) %>%
-  mean_hdi()
-
-P_tab_fig3a %>%
-  group_by(LENGTH) %>%
-  compare_levels(variable = mean, by = SHUFFLE, fun = `/`) %>%
-  mean_hdi()
-
-P_tab_fig3a %>% 
-  mutate(group=paste(LENGTH, SHUFFLE)) %>% 
-  compare_levels(variable = mean, by = group, fun = `/`) %>%
-  ggplot() + 
-  stat_eye(aes(mean,group),.width=c(0.01,0.95),
-           point_interval=mean_hdi)+
-  geom_vline(xintercept = 1)+
-  scale_x_continuous("posterior ratio of mean population sizes")+
-  scale_y_discrete("comparison")
-
-
-
-P_tab_fig3b %>%
-  group_by(SHUFFLE) %>%
-  compare_levels(
-    variable = mean, by = local_connectedness, fun = `/`,
-    comparison = list(
-      # we give the comparison list explicitly since by default it will give center/corner
-      # and we'd rather present the reverse
-      c("corner (low)", "center (high)"),
-      c("corner (low)", "side (medium)"),
-      c("side (medium)", "center (high)")
-    )
-  ) %>%
-  mean_hdi()
-
-P_tab_fig3b %>%
-  group_by(local_connectedness) %>%
-  compare_levels(variable = mean, by = SHUFFLE, fun = `/`) %>%
-  mean_hdi()
-
-P_tab_fig3b %>% 
-  mutate(group=paste(local_connectedness, SHUFFLE)) %>% 
-  compare_levels(variable = mean, by = group, fun = `/`) %>%
-  ggplot() + 
-  stat_eye(aes(mean,group),.width=c(0.01,0.95),
-           point_interval=mean_hdi)+
-  geom_vline(xintercept = 1)+
-  scale_x_continuous("posterior ratio of mean population sizes")+
-  scale_y_discrete("comparison")
-```
-
-# the simulation variability plot
-
-
-```{r import-simulation-output}
-sim_mortality <- read_csv(here("simulations_output", "tetranychus-metapop-2019-sims-disp-mortality.csv"))
-
-# one row = the summarised outcome of one simulation run
-# alphavar, betavar, betavar_, and gammavar: variabilities following Wang and Loreau 2014
-# betavar_ is the multiplicative one, betavar the additive one
-# size: mean patch population size, provided separately for each type of local connectedness (center, side, corner)
-# alphavar is also provided separately for eacg type of local connectedness, in addition to the main one
-# disp_mort: set dispersal mortality
-```
-
-```{r making-s5-plot}
-A1 <- ggplot(sim_mortality, aes(x = disp_mort, y = alphavar)) +
-  geom_point(size = 2, col = "grey80") +
-  geom_smooth(method = "gam", col = "black") +
-  scale_y_continuous(expression(paste(alpha, " variability")),
-    lim = c(0.01, 0.025)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-
-B1 <- ggplot(sim_mortality, aes(x = disp_mort, y = 1 / betavar_)) +
-  geom_point(size = 2, col = "grey80") +
-  geom_smooth(method = "gam", col = "black") +
-  scale_y_continuous(expression(paste("Spatial synchrony  ", phi1)),
-    lim = c(0.05, 0.25)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-
-C1 <- ggplot(sim_mortality, aes(x = disp_mort, y = gammavar)) +
-  geom_point(size = 2, col = "grey80") +
-  geom_smooth(method = "gam", col = "black") +
-  scale_y_continuous(expression(paste(gamma, " variability")),
-    lim = c(0.001, 0.0055)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-
-D1 <- sim_mortality %>%
-  select(-c(`alphavar corner`, `alphavar center`, `alphavar side`)) %>%
-  pivot_longer(cols = c(`size corner`, `size center`, `size side`)) %>%
-  mutate(`local connectedness` = fct_recode(factor(name),
-    `center (high)` = "size center",
-    `side (medium)` = "size side",
-    `corner (low)` = "size corner"
-  )) %>%
-  mutate(`local connectedness` = fct_relevel(`local connectedness`, "center (high)", after = Inf)) %>%
-  ggplot() +
-  geom_point(aes(x = disp_mort, y = value, col = `local connectedness`), size = 2, alpha = 0.05) +
-  geom_smooth(aes(x = disp_mort, y = value, col = `local connectedness`), method = "gam") +
-  scale_colour_manual(values = c("#e66101", "#fdb863", "#5e3c99")) +
-  scale_y_continuous("mean local population size",
-    lim = c(20, 150)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-
-
-E1 <- ggplot(sim_mortality, aes(x = disp_mort, y = betavar)) +
-  geom_point(size = 2, col = "grey80") +
-  geom_smooth(method = "gam", col = "black") +
-  scale_y_continuous(expression(paste("Additive spatial variability   ", beta[2])),
-    lim = c(0.005, 0.025)
-  ) +
-  scale_x_continuous("Dispersal cost (mortality)")
-```
-
-```{r displaying-s5-plot, fig.width=8, fig.height=5}
-(A1 | B1) / (C1 | D1) &
-  cowplot::theme_half_open(11) &
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-```
-
-
-
-# now let's do pairwise comparison plots
-
-see above for now, will update after validated
 
 # References
 
