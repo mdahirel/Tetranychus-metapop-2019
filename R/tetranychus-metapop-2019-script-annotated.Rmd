@@ -905,6 +905,8 @@ save(list=c("pairwise1SHUFFLE","pairwise1LENGTH","pairwise1local"),file=here("R_
 
 ### Figure 2
 
+We here basically the same as in Figure 1, but splitting randomized and non-randomized replicates instead of pooling them together:
+
 ```{r fig2_tables}
 P_tab_fig2a <- P_tab_plots %>%
   group_by(.iteration, LENGTH, SHUFFLE) %>%
@@ -947,7 +949,7 @@ fig2a <- ggplot(P_tab_fig2a) +
     point_interval = mean_hdi
   ) +
   scale_fill_manual(values = paletteLENGTH) +
-  scale_x_continuous("") +
+  scale_x_continuous("temporal mean of patch population size (adult females)") +
   scale_y_discrete("Metapopulation connectedness") +
   facet_wrap(~SHUFFLE)
 
@@ -970,7 +972,10 @@ fig2b <- ggplot(P_tab_fig2b) +
   scale_y_discrete("Local connectedness") +
   facet_wrap(~SHUFFLE)
 
-(fig2a / fig2b) &
+## we estimate posterior for local and metapop connectedness,but only display comparisons for 
+## metapop in main figure (see supplementary for all comparisons)
+
+(fig2a) &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
     theme(legend.position = "none") &
@@ -981,7 +986,7 @@ save(list=c("P_tab_fig2a","P_tab_fig2b"),file=here("R_output","pairwise_posterio
 
 ### Pairwise comparisons
 
-```{r pairwise_comp_fig3}
+```{r pairwise_comp_fig2}
 P_tab_fig2a %>%
   group_by(SHUFFLE) %>%
   compare_levels(
