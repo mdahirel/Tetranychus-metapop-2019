@@ -40,10 +40,13 @@ This script uses the Stan language [@carpenterStanProbabilisticProgramming2017] 
 
 library(cmdstanr) # [github::stan-dev/cmdstanr] v0.3.0
 
+
+library(tidyverse) # CRAN v1.3.0
+
 library(brms) # CRAN v2.15.0
 ## the interface we are using
 
-library(tidyverse) # CRAN v1.3.0
+
 library(bayesplot) # CRAN v1.8.0
 library(tidybayes) # CRAN v2.3.1
 library(matrixStats) # CRAN v0.58.0
