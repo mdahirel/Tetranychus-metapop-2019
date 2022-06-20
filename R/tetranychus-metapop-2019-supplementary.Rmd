@@ -1,5 +1,5 @@
 ---
-title: "Supplementary Material for \"Spatial phenotypic organization affects the dynamics of metapopulations according to their connectedness\""
+title: "Supplementary Material for \"Phenotypic structuring and connectedness jointly impact the dynamics of experimental metapopulations\""
 author: Stefano Masier, Maxime Dahirel, Frederik Mortier, Dries Bonte
 output: pdf_document
 editor_options:
@@ -46,7 +46,16 @@ N_iter <- N_warmup + 2000 ## recommended for publication-level quality: 2000 ite
 ## Nwarmup + 200 is probably good enough for tests
 ```
 
-# S01 -- Quantification of connectedness-dependent dispersal mortality
+
+# S01 -- Experimental metapopulations -- practical details and maintenance during experiments
+
+All beans leaves used in the experiment were sourced from bean plants grown without using any pesticide and under controlled climatic rooms (21 ± 1°C, L:D 16:8).
+
+Each metapopulation was independently mounted on a bed of wet cotton, which was kept soaked with distilled water to provide hydration to the leaves and to create a barrier to prevent the mites from escaping or moving between patches outside the designated routes. To ensure constant hydration, automatic gardening pumps (GARDENA® set 1265-20) were connected to a reserve of distilled water and set to deliver a fixed amount of water through pipes during 1 minute once every 8 hours. The water flow was monitored to ensure that it never flooded the leaves or the bridges, to prevent additional stress and ensure that the connection between patches was always maintained.
+
+Landscapes were contained in top-opened plastic crates whose sides were covered in a thick Vaseline layer, to further ensure that no cross-contamination could happen between different metapopulations. The water pipes were coated in Vaseline as well, and were positioned so that there was as little direct contact with the cotton as possible, to reduce the chance of mites climbing on them. To ensure resources remained fresh throughout the experiment, every leaf in the setup was refreshed with a new one once a week, at the same time counting was done. First, adult females were counted on the leaf under a stereomicroscope; then they were moved to the new leaf squares, following the protocol described in the main text. Finally, the old leaves were laid above the new ones, sustained by short sticks to reduce direct contact (to insure ventilation and prevent the spread of molds and fungal infestations), and left in place for 48 hours to allow males and juveniles to move on the new leaves as well. By keeping the old leaves detached from the cotton, we also induced a quick desiccation and a sudden drop of the food quality, thus stimulating the dispersal of the individuals towards the new leaf. After 48 hours, all the old leaves were removed along with the sticks to prevent mites from spinning webs around them.
+
+# S02 -- Quantification of connectedness-dependent dispersal mortality
 
 We tested how dispersal success and individual survival is affected by the length of a Parafilm bridge in a setup similar to the one described in the main text, to empirically demonstrate that the lengths we chose in the main experiment do apply a significant selective pressure onto dispersers.
 
@@ -82,7 +91,7 @@ beta_slope <- posterior_samples(mod_bridge) %>%
 
 ## Results 
 
-The proportion of dead individuals increased with the length of the plastic bridge the mites were placed upon ($\beta$ = `r round(beta_slope$b_length_centered,2)` [`r round(beta_slope$.lower,2)`, `r round(beta_slope$.upper,2)`], **Fig. S01.1**).
+The proportion of dead individuals increased with the length of the plastic bridge the mites were placed upon ($\beta$ = `r round(beta_slope$b_length_centered,2)` [`r round(beta_slope$.lower,2)`, `r round(beta_slope$.upper,2)`], **Fig. S02.1**).
 
 ```{r prelim-plot, fig.width=4, fig.height=4}
 tibble(LENGTH = 4:32, Nstart = 10) %>%
@@ -98,15 +107,8 @@ tibble(LENGTH = 4:32, Nstart = 10) %>%
   theme(legend.position = "none")
 ```
 
-**Figure S01.1** -- Mortality rate as a function of bridge length during preliminary trials. Both observed values (dots) and posterior means with 95% credible band are plotted.
+**Figure S02.1** -- Mortality rate as a function of bridge length during preliminary trials. Both observed values (dots) and posterior means with 95% credible band are plotted.
 
-# S02 -- Experimental metapopulations -- practical details and maintenance during experiments
-
-All beans leaves used in the experiment were sourced from bean plants grown without using any pesticide and under controlled climatic rooms (21 ± 1°C, L:D 16:8).
-
-Each metapopulation was independently mounted on a bed of wet cotton, which was kept soaked with distilled water to provide hydration to the leaves and to create a barrier to prevent the mites from escaping or moving between patches outside the designated routes. To ensure constant hydration, automatic gardening pumps (GARDENA® set 1265-20) were connected to a reserve of distilled water and set to deliver a fixed amount of water through pipes during 1 minute once every 8 hours. The water flow was monitored to ensure that it never flooded the leaves or the bridges, to prevent additional stress and ensure that the connection between patches was always maintained.
-
-Landscapes were contained in top-opened plastic crates whose sides were covered in a thick Vaseline layer, to further ensure that no cross-contamination could happen between different metapopulations. The water pipes were coated in Vaseline as well, and were positioned so that there was as little direct contact with the cotton as possible, to reduce the chance of mites climbing on them. To ensure resources remained fresh throughout the experiment, every leaf in the setup was refreshed with a new one once a week, at the same time counting was done. First, adult females were counted on the leaf under a stereomicroscope; then they were moved to the new leaf squares, following the protocol described in the main text. Finally, the old leaves were laid above the new ones, sustained by short sticks to reduce direct contact (to insure ventilation and prevent the spread of molds and fungal infestations), and left in place for 48 hours to allow males and juveniles to move on the new leaves as well. By keeping the old leaves detached from the cotton, we also induced a quick desiccation and a sudden drop of the food quality, thus stimulating the dispersal of the individuals towards the new leaf. After 48 hours, all the old leaves were removed along with the sticks to prevent mites from spinning webs around them.
 
 # S03 -- Stationarity in experimental metapopulations
 
