@@ -119,21 +119,12 @@ From here, we create two tables. One for the patch-by-patch model, where we swit
 
 ```{r data-patch}
 P_data <- data_wide %>%
-  pivot_longer(P11:P33, names_to = "PATCH", values_to = "AFEMA") %>%
-  mutate(local_connectedness = 1 + 1 * (PATCH %in% c("P12", "P21", "P23", "P32")) +
-    2 * (PATCH %in% c("P11", "P13", "P31", "P33"))) %>%
-  mutate(local_connectedness = fct_recode(factor(local_connectedness),
-    `center (high)` = "1",
-    `side (medium)` = "2",
-    `corner (low)` = "3"
-  ))
+  pivot_longer(P11:P33, names_to = "PATCH", values_to = "AFEMA")
 
 ## adding dummy centered variables
 P_data <- P_data %>%
   mutate(is.randomized = as.numeric(SHUFFLE == "randomized") - mean(as.numeric(SHUFFLE == "randomized"))) %>%
   mutate(
-    is.local5 = as.numeric(local_connectedness == "side (medium)") - mean(as.numeric(local_connectedness == "side (medium)")),
-    is.local3 = as.numeric(local_connectedness == "corner (low)") - mean(as.numeric(local_connectedness == "corner (low)")),
     is.landscape8 = as.numeric(LENGTH == "8 cm (medium)") - mean(as.numeric(LENGTH == "8 cm (medium)")),
     is.landscape16 = as.numeric(LENGTH == "16 cm (low)") - mean(as.numeric(LENGTH == "16 cm (low)"))
   )
@@ -315,7 +306,7 @@ Here $c$ and $d$ refer to the metapopulation-level random effects, for the mean 
 
 ```{r P_formulas}
 P_formula <- bf(
-  AFEMA ~ (is.local5 + is.local3 + is.landscape8 + is.landscape16) * is.randomized + # we use the dummy centred variables
+  AFEMA ~ (is.landscape8 + is.landscape16) * is.randomized + # we use the dummy centred variables
     (1 | METAPOP_ID/PATCH) + (0 + PATCH | gr(METAPOP_ID:WEEK, by = METAPOP_ID)),
   family = poisson)
 ```
@@ -463,10 +454,10 @@ One may wonder why go that far for the patch-level model. Surely one could simpl
 ```{r P_model_fitting_alternate}
 ### adapted formula
 P_formula2 <- bf(
-  AFEMA ~ (is.local5 + is.local3 + is.landscape8 + is.landscape16) * is.randomized +
+  AFEMA ~ (is.landscape8 + is.landscape16) * is.randomized +
     (1 | METAPOP_ID / PATCH),
   nlf(shape ~ 1 / exp(loginvshape)),
-  loginvshape ~ (is.local5 + is.local3 + is.landscape8 + is.landscape16) * is.randomized +
+  loginvshape ~ (is.landscape8 + is.landscape16) * is.randomized +
     (1 | METAPOP_ID / PATCH),
   family = negbinomial(link_shape = "identity")
 )
@@ -589,8 +580,8 @@ We then need to estimate the latent patch-level intercepts. For our purpose, thi
 ```{r create_latent_intercepts}
 P_latent_intercepts <- P_data %>%
   select(
-    METAPOP_ID, SHUFFLE, LENGTH, local_connectedness, PATCH,
-    is.local5, is.local3, is.landscape8, is.landscape16, is.randomized
+    METAPOP_ID, SHUFFLE, LENGTH, PATCH,
+    is.landscape8, is.landscape16, is.randomized
   ) %>%
   distinct() %>%
   add_fitted_draws(P_mod, re_formula = ~ (1 | METAPOP_ID / PATCH), scale = "linear") %>%
@@ -636,10 +627,7 @@ P_tab <- P_tab %>%
   )) %>%
   ### we then average within metapops:
   mutate(P_mean_all = map(.x = P_pred, .f = ~ mean(.x))) %>%
-  mutate(P_mean_corners = map(.x = P_pred, .f = ~ mean(.x[c(1, 3, 7, 9)]))) %>%
-  mutate(P_mean_center = map(.x = P_pred, .f = ~ mean(.x[c(5)]))) %>%
-  mutate(P_mean_sides = map(.x = P_pred, .f = ~ mean(.x[c(2, 4, 6, 8)]))) %>%
-  unnest(c(P_mean_all, P_mean_corners, P_mean_center, P_mean_sides))
+  unnest(P_mean_all)
 ```
 
 Now, to estimate $\alpha$, $\beta$ and $\gamma$ variabilities, we need to get the temporal variance-covariance matrices from the latent scale to the data scale [see @villemereuilGeneralMethodsEvolutionary2016]. Ideally we'd use the `QGmv...` functions in the `QGglmm` package, but they become terribly inefficient in memory use once the multivariate model has more than 5 variables (and we have 9). It's because the multivariate functions integrate with `cubature` rather than using the closed form version, (if I understood correctly) because they have to work even for cases where the different variables are from different families. But we're lucky because our 9 variables have the same family, so it's actually very easy to do it manually using the closed form formulas in the source papers!! 
@@ -706,17 +694,13 @@ And we need to summarize the observed values to display them along the posterior
 
 ```{r obs_summaries}
 P_obsmeans <- P_data %>%
-  group_by(SHUFFLE, LENGTH, METAPOP_ID, PATCH, local_connectedness) %>%
+  group_by(SHUFFLE, LENGTH, METAPOP_ID, PATCH) %>%
   summarise(P_mean_obs = mean(AFEMA), P_var_obs = var(AFEMA)) %>%
   ungroup() %>%
   mutate(
     LENGTH = fct_relevel(
       factor(LENGTH),
       "16 cm (low)", "8 cm (medium)", "4 cm (high)"
-    ),
-    local_connectedness = fct_relevel(
-      factor(local_connectedness),
-      "corner (low)", "side (medium)", "center (high)"
     )
   )
 ```
@@ -725,7 +709,6 @@ Before doing the figures, we also need to create color palettes that'll be used 
 
 ```{r figure_palettes}
 paletteLENGTH <- c("#D55E00", "#E69F00", "#F0E442")
-paletteLOCAL <- c("#e66101", "#fdb863", "#5e3c99")
 ```
 
 ## Patch-level means, additive effects
@@ -745,23 +728,6 @@ P_tab_fig1b <- P_tab_plots %>%
   summarise(mean = mean(P_mean_all)) %>%
   ungroup()
 
-P_tab_fig1c <- P_tab_plots %>%
-  pivot_longer(
-    cols = c(P_mean_center, P_mean_sides, P_mean_corners),
-    names_to = "local_connectedness", values_to = "P_mean_local"
-  ) %>%
-  mutate(local_connectedness = fct_recode(factor(local_connectedness),
-    `center (high)` = "P_mean_center",
-    `side (medium)` = "P_mean_sides",
-    `corner (low)` = "P_mean_corners"
-  )) %>%
-  mutate(local_connectedness = fct_relevel(
-    factor(local_connectedness),
-    "corner (low)", "side (medium)", "center (high)"
-  )) %>%
-  group_by(.iteration, local_connectedness) %>%
-  summarise(mean = mean(P_mean_local)) %>%
-  ungroup()
 ```
 
 
@@ -795,25 +761,7 @@ fig1b <- ggplot(P_tab_fig1b) +
   scale_x_continuous("") +
   scale_y_discrete("Metapopulation connectedness")
 
-fig1c <- ggplot(P_tab_fig1c) +
-  geom_jitter(
-    data = P_obsmeans,
-    aes(
-      x = P_mean_obs, y = local_connectedness,
-      alpha = 1 / (P_var_obs / P_mean_obs^2)
-    ),
-    col = "grey60", height = 0.2, size = 3
-  ) +
-  stat_halfeye(aes(x = mean, y = local_connectedness, fill = local_connectedness),
-    orientation = "horizontal",
-    .width = c(0.01, 0.95), slab_alpha = 0.7,
-    point_interval = mean_hdi
-  ) +
-  scale_fill_manual(values = paletteLOCAL) +
-  scale_x_continuous("temporal mean of patch population size (adult females)") +
-  scale_y_discrete("Local connectedness")
-
-(fig1a / fig1b / fig1c) &
+(fig1a / fig1b) &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") &
   theme(legend.position = "none") &
@@ -866,34 +814,11 @@ pair1b <- pairwise1LENGTH %>%
   scale_x_continuous("")+
   scale_y_discrete("comparison")
 
-### pairwise for local connectedness
-pairwise1local <- P_tab_fig1c %>%
-  compare_levels(
-    variable = mean, by = local_connectedness, fun = `/`,
-    comparison = list(
-      # we give the comparison list explicitly since by default it will give center/corner
-      # and we'd rather present the reverse
-      c("corner (low)", "center (high)"),
-      c("corner (low)", "side (medium)"),
-      c("side (medium)", "center (high)")
-    )
-  ) 
 
-pairwise1local %>%
-  mean_hdi()
-
-pair1c <- pairwise1local %>% 
-  ggplot() + 
-  stat_eye(aes(mean,local_connectedness),.width=c(0.01,0.95),
-           point_interval=mean_hdi)+
-  geom_vline(xintercept = 1)+
-  scale_x_continuous("posterior ratio of mean population sizes")+
-  scale_y_discrete("")
-
-(pair1a/pair1b/pair1c) &
+(pair1a/pair1b) &
   coord_cartesian(xlim=c(0.75,1.35))
 
-save(list=c("pairwise1SHUFFLE","pairwise1LENGTH","pairwise1local"),file=here("R_output","pairwise_posteriors_popsize1.Rdata"))
+save(list=c("pairwise1SHUFFLE","pairwise1LENGTH"),file=here("R_output","pairwise_posteriors_popsize1.Rdata"))
 ```
 
 ## Patch-level means, interactive effects
@@ -906,24 +831,6 @@ We here basically the same as in Figure 1, but splitting randomized and non-rand
 P_tab_fig2a <- P_tab_plots %>%
   group_by(.iteration, LENGTH, SHUFFLE) %>%
   summarise(mean = mean(P_mean_all)) %>%
-  ungroup()
-
-P_tab_fig2b <- P_tab_plots %>%
-  pivot_longer(
-    cols = c(P_mean_center, P_mean_sides, P_mean_corners),
-    names_to = "local_connectedness", values_to = "P_mean_local"
-  ) %>%
-  mutate(local_connectedness = fct_recode(factor(local_connectedness),
-    `center (high)` = "P_mean_center",
-    `side (medium)` = "P_mean_sides",
-    `corner (low)` = "P_mean_corners"
-  )) %>%
-  mutate(local_connectedness = fct_relevel(
-    factor(local_connectedness),
-    "corner (low)", "side (medium)", "center (high)"
-  )) %>%
-  group_by(.iteration, local_connectedness, SHUFFLE) %>%
-  summarise(mean = mean(P_mean_local)) %>%
   ungroup()
 ```
 
@@ -948,36 +855,13 @@ fig2a <- ggplot(P_tab_fig2a) +
   scale_y_discrete("Metapopulation connectedness") +
   facet_wrap(~SHUFFLE)
 
-# another version using local connectedness, not used in present version of manuscript
-fig2b <- ggplot(P_tab_fig2b) +
-  geom_jitter(
-    data = P_obsmeans,
-    aes(
-      x = P_mean_obs, y = local_connectedness,
-      alpha = (1 / (P_var_obs / P_mean_obs^2))
-    ),
-    col = "grey60", height = 0.2, size = 3
-  ) +
-  stat_halfeye(aes(x = mean, y = local_connectedness, fill = local_connectedness),
-    orientation = "horizontal",
-    .width = c(0.01, 0.95), slab_alpha = 0.7,
-    point_interval = mean_hdi
-  ) +
-  scale_fill_manual(values = paletteLOCAL) +
-  scale_x_continuous("temporal mean of patch population size (adult females)") +
-  scale_y_discrete("Local connectedness") +
-  facet_wrap(~SHUFFLE)
-
-## we estimate posterior for local and metapop connectedness,but only display comparisons for 
-## metapop in main figure (see supplementary for all comparisons)
-
 (fig2a) &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") +
     theme(legend.position = "none") &
   coord_cartesian(xlim = c(5, 50))
 
-save(list=c("P_tab_fig2a","P_tab_fig2b"),file=here("R_output","pairwise_posteriors_popsize2.Rdata"))
+save(list=c("P_tab_fig2a"),file=here("R_output","pairwise_posteriors_popsize2.Rdata"))
 ```
 
 ### Pairwise comparisons
@@ -1004,37 +888,6 @@ P_tab_fig2a %>%
 
 P_tab_fig2a %>% 
   mutate(group=paste(LENGTH, SHUFFLE)) %>% 
-  compare_levels(variable = mean, by = group, fun = `/`) %>%
-  ggplot() + 
-  stat_eye(aes(mean,group),.width=c(0.01,0.95),
-           point_interval=mean_hdi)+
-  geom_vline(xintercept = 1)+
-  scale_x_continuous("posterior ratio of mean population sizes")+
-  scale_y_discrete("comparison")
-
-
-
-P_tab_fig2b %>%
-  group_by(SHUFFLE) %>%
-  compare_levels(
-    variable = mean, by = local_connectedness, fun = `/`,
-    comparison = list(
-      # we give the comparison list explicitly since by default it will give center/corner
-      # and we'd rather present the reverse
-      c("corner (low)", "center (high)"),
-      c("corner (low)", "side (medium)"),
-      c("side (medium)", "center (high)")
-    )
-  ) %>%
-  mean_hdi()
-
-P_tab_fig2b %>%
-  group_by(local_connectedness) %>%
-  compare_levels(variable = mean, by = SHUFFLE, fun = `/`) %>%
-  mean_hdi()
-
-P_tab_fig2b %>% 
-  mutate(group=paste(local_connectedness, SHUFFLE)) %>% 
   compare_levels(variable = mean, by = group, fun = `/`) %>%
   ggplot() + 
   stat_eye(aes(mean,group),.width=c(0.01,0.95),

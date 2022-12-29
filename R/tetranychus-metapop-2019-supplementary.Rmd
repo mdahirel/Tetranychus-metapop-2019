@@ -155,8 +155,6 @@ P_data <- data_wide %>%
 P_data <- P_data %>%
   mutate(is.randomized = as.numeric(SHUFFLE == "randomized") - mean(as.numeric(SHUFFLE == "randomized"))) %>%
   mutate(
-    is.local5 = as.numeric(local_connectedness == "side (medium)") - mean(as.numeric(local_connectedness == "side (medium)")),
-    is.local3 = as.numeric(local_connectedness == "corner (low)") - mean(as.numeric(local_connectedness == "corner (low)")),
     is.landscape8 = as.numeric(LENGTH == "8 cm (medium)") - mean(as.numeric(LENGTH == "8 cm (medium)")),
     is.landscape16 = as.numeric(LENGTH == "16 cm (low)") - mean(as.numeric(LENGTH == "16 cm (low)"))
   )
@@ -238,7 +236,7 @@ M_data %>%
 
 ## Patch-level model
 
-We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because of count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment, local connectedness and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
+We fit a generalized linear mixed/multilevel model to the abundance data. This Poisson model (because of count data) includes "random" effects of metapopulation ID (to account for the fact some replicates may have higher/lower average population sizes) and patch nested in ID (because patches may differ beyond the effect of treatment and replicate). Importantly, it also includes a time random effect, to account for temporal patch variance-covariance.
 You can see below that we are estimating a separate temporal variance-covariance matrix for each replicate $i$. This means that (i) each patch has its own temporal variance, and patches from the same replicate can be correlated. We average everything downstream of the model as needed, but given the non-linearities everywhere in a GLMM, and the fact patch coordinates are arbitrary (we could have rotated metapopulations 90, 180 or 270° without changing anything meaningful), it is better to calculate every metric of interest replicate by replicate first and only average later. It is important to note that the inclusion of temporal covariance matrices generates what are *de facto* observation-level random effects [@harrisonUsingObservationlevelRandom2014], so there is no further overdispersion to account for.
 
 The intuition behind this formulation (latent residuals via OLRE + specified covariance structure) is the same
@@ -284,7 +282,7 @@ where $B_j$ are the fixed effects (with $B_{0}$ the intercept), $a$ are replicat
 
 All key metrics of interest in the present paper can be derived from this model:
 
-- the mean local population size of the patch $x,y$ in metapopulation $i$ is $\mu_{i,x,y}=\exp(B_{0} + \sum_{j=1}^J({B_{j} \times x_{j[i,x,y]}}) + a_{[i]} + c_{[i,x,y]}+ \frac{\sigma_{d[i,x,y]}^2}{2})$, i.e. the back-transformed sum of the patch-level latent mean and half the within-patch latent variance [based on the formula for the mean of the log-normal distribution; see also @villemereuilGeneralMethodsEvolutionary2016]. Note that because the observed-scale mean depends on both the latent scale mean and the latent scale within-patch variance, and because our model allows both to vary between treatments, one cannot make inferences about treatment effects on means based on fixed effects alone;
+- the mean local population size of the patch $x,y$ in metapopulation $i$ is $\mu_{i,x,y}=\exp(B_{0} + \sum_{j=1}^J({B_{j} \times x_{j[i,x,y]}}) + a_{[i]} + c_{[i,x,y]}+ \frac{\sigma_{d[i,x,y]}^2}{2})$, i.e. the back-transformed sum of the patch-level latent mean and half the within-patch latent variance [based on the formula for the mean of the log-normal distribution; see also @villemereuilGeneralMethodsEvolutionary2016]. Note that because the observed-scale mean depends on both the latent scale mean and the latent scale within-patch variance, and because our model effectively allows both to vary between treatments, one cannot make inferences about treatment effects on means based on fixed effects alone;
 
 - the observed-scale temporal variances and covariances $w$ (to use the syntax in main text **Table 1**) can be derived from the latent scale patch-level means ($B_{0} + \sum_{j=1}^J({B_{j} \times x_{j[i,x,y]}}) + a_{[i]} + c_{[i,x,y]}$) and latent scale within-patch variances ($\sigma_{d[i,x,y]}^2$) using the procedures detailed in @villemereuilGeneralMethodsEvolutionary2016;
 
@@ -323,7 +321,7 @@ In the metapopulation-level model, we replaced the prior for $\beta_{0}$ by $\ma
 
 # S05 -- Posterior pairwise comparisons
 
-The following plots describe the outcome of posterior pairwise comparisons between treatments, regarding local population sizes (**Figs S05-1** to **S05-3**, match with main text **Figs 1-2**) and variability metrics (**Figs S05-4** and **S05-5**, match with main text **Fig. 3**). In all cases, comparisons are ratios, and dots and segments represent the posterior mean and 95% Highest Density Interval.
+The following plots describe the outcome of posterior pairwise comparisons between treatments, regarding local population sizes (**Figs S05-1** and **S05-2**, match with main text **Figs 1-2**) and variability metrics (**Figs S05-3** and **S05-4**, match with main text **Fig. 3**). In all cases, comparisons are ratios, and dots and segments represent the posterior mean and 95% Highest Density Interval.
 
 ```{r fig-s05-1, fig.width=5, fig.height=6}
 load(here("R_output","pairwise_posteriors_popsize1.Rdata"))
@@ -346,16 +344,7 @@ pair1b <- pairwise1LENGTH %>%
        x="",
        y="comparison")
 
-pair1c <- pairwise1local %>% 
-  ggplot() + 
-  stat_eye(aes(mean,local_connectedness),.width=c(0.01,0.95),
-           point_interval=mean_hdi)+
-  geom_vline(xintercept = 1)+
-  labs(subtitle="effect of local connectedness",
-       x="posterior ratio of mean population sizes",
-       y="")
-
-(pair1a/pair1b/pair1c) &
+(pair1a/pair1b) &
   coord_cartesian(xlim=c(0.75,1.35)) &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
@@ -381,23 +370,7 @@ P_tab_fig2a %>%
 
 **Figure S05.2** -- Combined effects of metapopulation-level connectedness and randomization on local population size.
 
-```{r fig-s05-3}
-P_tab_fig2b %>% 
-  mutate(group=paste(local_connectedness, SHUFFLE)) %>% 
-  compare_levels(variable = mean, by = group, fun = `/`) %>%
-  ggplot() + 
-  stat_eye(aes(mean,group),.width=c(0.01,0.95),
-           point_interval=mean_hdi)+
-  geom_vline(xintercept = 1)+
-  scale_x_continuous("posterior ratio of mean population sizes")+
-  scale_y_discrete("comparison") +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-```
-
-**Figure S05.3** -- Combined effects of local connectedness and randomization on local population size.
-
-```{r fig-s05-4, fig.width=5, fig.height=7}
+```{r fig-s05-3, fig.width=5, fig.height=7}
 load(here("R_output","pairwise_posteriors_variabilities.Rdata"))
 
 pair2alpha_a <- pairwise2alpha_shuffle %>% 
@@ -440,9 +413,9 @@ pair2beta2_a <- pairwise2beta2_shuffle %>%
 
 ```
 
-**Figure S05.4** -- Effect of randomization on variability metrics
+**Figure S05.3** -- Effect of randomization on variability metrics
 
-```{r fig-s05-5, fig.width=5, fig.height=8}
+```{r fig-s05-4, fig.width=5, fig.height=8}
 
 pair2alpha_b <- pairwise2alpha_length %>% 
   ggplot() + 
@@ -483,7 +456,7 @@ pair2beta2_b <- pairwise2beta2_length %>%
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
 
-**Figure S05.5** -- Effect of metapopulation-level connectedness on variability metrics
+**Figure S05.4** -- Effect of metapopulation-level connectedness on variability metrics
 
 # S06 -- Comparisons between patch-level model predictions, metapopulation-level model predictions, and observed data
 
